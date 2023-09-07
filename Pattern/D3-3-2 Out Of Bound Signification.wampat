@@ -1,0 +1,50 @@
+WALL:(ROW = 5, COL = 9, SIZEX = 5.85, SIZEY = 2.98, CURVEX = 0.1, CURVEY = 0.1, MAXANGLE = 80, MOLESCALEX = 34, MOLESCALEY = 34)
+MODIFIER:(MAINCONTROLLER = Right, MOTORSPACE = Large, MOTORSPACEOOBSIGNIFICANT = None, PERFORMANCEFEEDBACK = None, JUDGEMENT = None)
+SEGMENT:(ID = 10002, LABEL = NoFeedback) // Baseline (no feedback) - Pattern D
+WAIT:(TIME=3)
+MOLE:(X = 5, Y = 3, LIFETIME = 10)
+WAIT:(TIME=10)
+MODIFIER:(MOTORSPACE = Small)
+SEGMENT:(ID = 10006, LABEL = Swap) // Baseline w/ motorspace swap (no feedback) - Pattern B
+MOLE:(X = 5, Y = 3, LIFETIME = 20) // B
+WAIT:(TIME=10)
+SEGMENT:(ID = 12001, LABEL = BreakSwap) // Break w/ 2 Questions - About swapping
+MESSAGE:(LABEL = Questions_!, TIME = 3)
+WAIT:(TIME=6)
+MODIFIER:(MOTORSPACE = Large, MOTORSPACEOOBSIGNIFICANT = StaticPointing)
+SEGMENT:(ID = 10002, LABEL = NoFeedback) // Baseline (no feedback) - Pattern D
+WAIT:(TIME=3)
+MOLE:(X = 5, Y = 3, LIFETIME = 10)
+WAIT:(TIME=10)
+MODIFIER:(MOTORSPACE = Tiny1)
+SEGMENT:(ID = 10006, LABEL = Swap) // Baseline w/ motorspace swap (no feedback) StaticPointing - Pattern B
+MOLE:(X = 5, Y = 3, LIFETIME = 20) // B
+WAIT:(TIME=10)
+SEGMENT:(ID = 12001, LABEL = BreakSwap) // Break w/ 2 Questions - About swapping
+MESSAGE:(LABEL = Questions_!, TIME = 3)
+WAIT:(TIME=6)
+MODIFIER:(MOTORSPACE = Large, MOTORSPACEOOBSIGNIFICANT = DynamicCenter)
+SEGMENT:(ID = 10002, LABEL = NoFeedback) // Baseline (no feedback) BEFORE SWAP - Pattern D
+MOLE:(X = 5, Y = 3, LIFETIME = 10)
+WAIT:(TIME=10)
+MODIFIER:(MOTORSPACE = Tiny2)
+SEGMENT:(ID = 10006, LABEL = Swap) // Baseline w/ motorspace swap (no feedback) DynamicCenter - Pattern C
+MOLE:(X = 5, Y = 3, LIFETIME = 20)  // C
+WAIT:(TIME=10)
+SEGMENT:(ID = 12001, LABEL = BreakSwap) // Break w/ 2 Questions - About swapping
+MESSAGE:(LABEL = Questions_!, TIME = 3)
+WAIT:(TIME=6)
+MODIFIER:(MOTORSPACE = Large, MOTORSPACEOOBSIGNIFICANT = DynamicCenterReversed)
+SEGMENT:(ID = 10002, LABEL = NoFeedback) // Baseline (no feedback) BEFORE SWAP - Pattern B
+MOLE:(X = 5, Y = 3, LIFETIME = 10)
+WAIT:(TIME=10)
+MODIFIER:(MOTORSPACE = Tiny3)
+SEGMENT:(ID = 10006, LABEL = Swap) // Baseline w/ motorspace swap (no feedback) DynamicCenterReversed - Pattern A
+MOLE:(X = 5, Y = 3, LIFETIME = 20) // A
+WAIT:(TIME=10)
+SEGMENT:(ID = 12001, LABEL = BreakSwap) // Break w/ 2 Questions - About swapping
+MESSAGE:(LABEL = Questions_!, TIME = 3)
+WAIT:(TIME=6)
+SEGMENT:(ID = 11007, LABEL = Calibration Point)
+MODIFIER:(MOTORSPACE = Large)
+MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
