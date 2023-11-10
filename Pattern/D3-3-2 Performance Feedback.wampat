@@ -368,6 +368,8 @@ WAIT:(HIT)
 SEGMENT:(ID = 11007, LABEL = Calibration Point)
 MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
 WAIT:(HIT)
+FEEDBACK:(TIME = 10)
+WAIT:(TIME=10)
 SEGMENT:(ID = 12002, LABEL = Break) // Break w/ 2 Questions - About feedback
 MESSAGE:(LABEL = Questions_!, TIME = 1)
 WAIT:(TIME=3)
@@ -416,6 +418,8 @@ WAIT:(HIT)
 SEGMENT:(ID = 11007, LABEL = Calibration Point)
 MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
 WAIT:(HIT)
+FEEDBACK:(TIME = 10)
+WAIT:(TIME=10)
 SEGMENT:(ID = 12002, LABEL = Break) // Break w/ 2 Questions - About feedback
 MESSAGE:(LABEL = Questions_!, TIME = 1)
 WAIT:(TIME=3)
@@ -464,6 +468,8 @@ WAIT:(HIT)
 SEGMENT:(ID = 11007, LABEL = Calibration Point)
 MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
 WAIT:(HIT)
+FEEDBACK:(TIME = 10)
+WAIT:(TIME=10)
 SEGMENT:(ID = 12002, LABEL = BreakBig) // Break w/ 2 Questions - About feedback GLOBAL
 MESSAGE:(LABEL = Questions_about_whole_feedback_!, TIME = 3)
 WAIT:(TIME=6)
