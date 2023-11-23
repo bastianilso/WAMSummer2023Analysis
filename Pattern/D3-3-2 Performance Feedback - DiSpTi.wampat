@@ -2,7 +2,7 @@ WALL:(ROW = 5, COL = 9, SIZEX = 5.85, SIZEY = 2.98, CURVEX = 0.1, CURVEY = 0.1, 
 MODIFIER:(MAINCONTROLLER = Right, MOTORSPACE = Medium, MOTORSPACEOOBSIGNIFICANT = DynamicCenterReversed, PERFORMANCEFEEDBACK = None, JUDGEMENT = None)
 MESSAGE:(LABEL = Warmup_Begins.., TIME = 3)
 WAIT:(TIME=6)
-SEGMENT:(ID = 10001, LABEL = Warmup) // WarmupLearningWAM
+SEGMENT:(ID = 13000000, LABEL = Warmup) // WarmupLearningWAM
 MOLE:(X = 2, Y = 3, LIFETIME = 5)
 WAIT:(HIT) 
 MOLE:(X = 2, Y = 1, LIFETIME = 5)
@@ -37,55 +37,9 @@ MOLE:(X = 8, Y = 2, LIFETIME = 5)
 WAIT:(HIT)
 MESSAGE:(LABEL = End_of_the_Warmup, TIME = 5)
 WAIT:(TIME=7)
-SEGMENT:(ID = 10003, LABEL = Operation) 
-MODIFIER:(MOTORSPACE = Medium, PERFORMANCEFEEDBACK = Operation, JUDGEMENT = Distance) // Operation feedback - Pattern A+C - JUDGEMENT DISTANCE
-MOLE:(X = 6, Y = 2, LIFETIME = 5)  // C
-WAIT:(HIT)
-MOLE:(X = 8, Y = 1, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 2, Y = 5, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 3, Y = 2, LIFETIME = 5)
-WAIT:(HIT)
-MOLE:(X = 7, Y = 4, LIFETIME = 5)
-WAIT:(HIT)
-MOLE:(X = 4, Y = 5, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 4, Y = 1, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 4, Y = 4, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 7, Y = 3, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 3, Y = 3, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 6, Y = 4, LIFETIME = 5)  // D
-WAIT:(HIT)
-MOLE:(X = 8, Y = 5, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 2, Y = 1, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 3, Y = 4, LIFETIME = 5)
-WAIT:(HIT)
-MOLE:(X = 4, Y = 2, LIFETIME = 5)
-WAIT:(HIT)
-MOLE:(X = 6, Y = 1, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 6, Y = 5, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 7, Y = 2, LIFETIME = 5)
-WAIT:(HIT)
-MOLE:(X = 2, Y = 3, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 8, Y = 3, LIFETIME = 5) 
-WAIT:(HIT)
-SEGMENT:(ID = 11015, LABEL = Calibration Point)
-MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
-WAIT:(HIT)
-SEGMENT:(ID = 12002, LABEL = Break) // Break w/ 2 Questions - About feedback
-MESSAGE:(LABEL = Algorithm_Question, TIME = 1)
-WAIT:(TIME=3)
-MODIFIER:(JUDGEMENT = MaxSpeed) // Operation feedback - Pattern C+D - JUDGEMENT SPEED
+// Operation Distance
+MODIFIER:(MOTORSPACE = Medium, PERFORMANCEFEEDBACK = Operation, JUDGEMENT = Distance)
+SEGMENT:(ID = 13011113, LABEL = OperationDistance) // Operation feedback - Pattern A+C - JUDGEMENT DISTANCE
 MOLE:(X = 2, Y = 2, LIFETIME = 5) // A
 WAIT:(HIT)
 MOLE:(X = 3, Y = 1, LIFETIME = 5) 
@@ -126,13 +80,15 @@ MOLE:(X = 7, Y = 3, LIFETIME = 5)
 WAIT:(HIT)
 MOLE:(X = 3, Y = 3, LIFETIME = 5) 
 WAIT:(HIT)
-SEGMENT:(ID = 11015, LABEL = Calibration Point)
+SEGMENT:(ID = 13210000, LABEL = Calibration Point)
 MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
 WAIT:(HIT)
-SEGMENT:(ID = 12002, LABEL = Break) // Break w/ 2 Questions - About feedback
+SEGMENT:(ID = 13310000, LABEL = Break) // Break w/ 2 Questions - About feedback
 MESSAGE:(LABEL = Algorithm_Question, TIME = 1)
 WAIT:(TIME=3)
-MODIFIER:(JUDGEMENT = Time) // Operation feedback - Pattern D+B - JUDGEMENT TIME
+// Operation Speed
+MODIFIER:(JUDGEMENT = MaxSpeed) 
+SEGMENT:(ID = 13021242, LABEL = OperationSpeed) // Operation feedback - Pattern D+B - JUDGEMENT SPEED
 MOLE:(X = 6, Y = 4, LIFETIME = 5)  // D
 WAIT:(HIT)
 MOLE:(X = 8, Y = 5, LIFETIME = 5) 
@@ -173,62 +129,64 @@ MOLE:(X = 5, Y = 1, LIFETIME = 5)
 WAIT:(HIT)
 MOLE:(X = 8, Y = 4, LIFETIME = 5)
 WAIT:(HIT)
-SEGMENT:(ID = 11015, LABEL = Calibration Point)
+SEGMENT:(ID = 13220000, LABEL = Calibration Point)
 MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
 WAIT:(HIT)
-SEGMENT:(ID = 12002, LABEL = BreakBig) // Break w/ 2 Questions - About feedback GLOBAL
+SEGMENT:(ID = 13320000, LABEL = Break) // Break w/ 2 Questions - About feedback
+MESSAGE:(LABEL = Algorithm_Question, TIME = 1)
+WAIT:(TIME=3)
+// Operation Time
+MODIFIER:(JUDGEMENT = Time)
+SEGMENT:(ID = 13031334, LABEL = OperationTime) // Operation feedback - Pattern C+D - JUDGEMENT TIME
+MOLE:(X = 6, Y = 2, LIFETIME = 5)  // C
+WAIT:(HIT)
+MOLE:(X = 8, Y = 1, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 2, Y = 5, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 3, Y = 2, LIFETIME = 5)
+WAIT:(HIT)
+MOLE:(X = 7, Y = 4, LIFETIME = 5)
+WAIT:(HIT)
+MOLE:(X = 4, Y = 5, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 4, Y = 1, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 4, Y = 4, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 7, Y = 3, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 3, Y = 3, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 6, Y = 4, LIFETIME = 5)  // D
+WAIT:(HIT)
+MOLE:(X = 8, Y = 5, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 2, Y = 1, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 3, Y = 4, LIFETIME = 5)
+WAIT:(HIT)
+MOLE:(X = 4, Y = 2, LIFETIME = 5)
+WAIT:(HIT)
+MOLE:(X = 6, Y = 1, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 6, Y = 5, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 7, Y = 2, LIFETIME = 5)
+WAIT:(HIT)
+MOLE:(X = 2, Y = 3, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 8, Y = 3, LIFETIME = 5) 
+WAIT:(HIT)
+SEGMENT:(ID = 13230000, LABEL = Calibration Point)
+MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
+WAIT:(HIT)
+SEGMENT:(ID = 13330000, LABEL = BreakBig) // Break w/ 2 Questions - About feedback GLOBAL
 MESSAGE:(LABEL = Feedback_Questions, TIME = 3)
 WAIT:(TIME=6)
+// Action Distance
 MODIFIER:(MOTORSPACE = Medium, PERFORMANCEFEEDBACK = Action, JUDGEMENT = Distance)
-SEGMENT:(ID = 10011, LABEL = Action) // Action feedback - Pattern B+A - JUDGEMENT DISTANCE
-MOLE:(X = 6, Y = 4, LIFETIME = 5)  // D
-WAIT:(HIT)
-MOLE:(X = 8, Y = 5, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 2, Y = 1, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 3, Y = 4, LIFETIME = 5)
-WAIT:(HIT)
-MOLE:(X = 4, Y = 2, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 6, Y = 1, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 6, Y = 5, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 7, Y = 2, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 2, Y = 3, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 8, Y = 3, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 2, Y = 2, LIFETIME = 5) // A
-WAIT:(HIT)
-MOLE:(X = 3, Y = 1, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 7, Y = 5, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 6, Y = 3, LIFETIME = 5)
-WAIT:(HIT)
-MOLE:(X = 9, Y = 4, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 1, Y = 4, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 1, Y = 3, LIFETIME = 5)
-WAIT:(HIT)
-MOLE:(X = 5, Y = 2, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 5, Y = 5, LIFETIME = 5) 
-WAIT:(HIT)
-MOLE:(X = 8, Y = 2, LIFETIME = 5)
-WAIT:(HIT)
-SEGMENT:(ID = 11007, LABEL = Calibration Point)
-MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
-WAIT:(HIT)
-SEGMENT:(ID = 12002, LABEL = Break) // Break w/ 2 Questions - About feedback
-MESSAGE:(LABEL = Algorithm_Question, TIME = 1)
-WAIT:(TIME=3)
-MODIFIER:(JUDGEMENT = MaxSpeed)
-SEGMENT:(ID = 10011, LABEL = Action) // Action feedback - Pattern D+A - JUDGEMENT SPEED
+SEGMENT:(ID = 13042121, LABEL = ActionDistance) // Action feedback - Pattern B+A - JUDGEMENT DISTANCE
 MOLE:(X = 2, Y = 4, LIFETIME = 5) // B
 WAIT:(HIT)
 MOLE:(X = 3, Y = 5, LIFETIME = 5) 
@@ -269,14 +227,15 @@ MOLE:(X = 5, Y = 5, LIFETIME = 5)
 WAIT:(HIT)
 MOLE:(X = 8, Y = 2, LIFETIME = 5)
 WAIT:(HIT)
-SEGMENT:(ID = 11007, LABEL = Calibration Point)
+SEGMENT:(ID = 13240000, LABEL = Calibration Point)
 MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
 WAIT:(HIT)
-SEGMENT:(ID = 12002, LABEL = Break) // Break w/ 2 Questions - About feedback
+SEGMENT:(ID = 13340000, LABEL = Break) // Break w/ 2 Questions - About feedback
 MESSAGE:(LABEL = Algorithm_Question, TIME = 1)
 WAIT:(TIME=3)
-MODIFIER:(JUDGEMENT = Time)
-SEGMENT:(ID = 10011, LABEL = Action) // Action feedback - Pattern C+B - JUDGEMENT TIME
+// Action Speed
+MODIFIER:(JUDGEMENT = MaxSpeed)
+SEGMENT:(ID = 13052232, LABEL = ActionSpeed) // Action feedback - Pattern C+B - JUDGEMENT SPEED
 MOLE:(X = 6, Y = 2, LIFETIME = 5)  // C
 WAIT:(HIT)
 MOLE:(X = 8, Y = 1, LIFETIME = 5) 
@@ -317,33 +276,34 @@ MOLE:(X = 5, Y = 1, LIFETIME = 5)
 WAIT:(HIT)
 MOLE:(X = 8, Y = 4, LIFETIME = 5)
 WAIT:(HIT)
-SEGMENT:(ID = 11007, LABEL = Calibration Point)
+SEGMENT:(ID = 13250000, LABEL = Calibration Point)
 MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
 WAIT:(HIT)
-SEGMENT:(ID = 12002, LABEL = BreakBig) // Break w/ 2 Questions - About feedback GLOBAL
-MESSAGE:(LABEL = Feedback_Questions, TIME = 3)
-WAIT:(TIME=6)
-MODIFIER:(MOTORSPACE = Medium, PERFORMANCEFEEDBACK = Task, JUDGEMENT = Distance)
-SEGMENT:(ID = 10011, LABEL = Action) // Action feedback - Pattern D+C - JUDGEMENT DISTANCE
-MOLE:(X = 2, Y = 4, LIFETIME = 5) // B
+SEGMENT:(ID = 13350000, LABEL = Break) // Break w/ 2 Questions - About feedback
+MESSAGE:(LABEL = Algorithm_Question, TIME = 1)
+WAIT:(TIME=3)
+// Action Time
+MODIFIER:(JUDGEMENT = Time)
+SEGMENT:(ID = 13062341, LABEL = ActionTime) // Action feedback - Pattern D+A - JUDGEMENT TIME
+MOLE:(X = 6, Y = 4, LIFETIME = 5)  // D
 WAIT:(HIT)
-MOLE:(X = 3, Y = 5, LIFETIME = 5) 
+MOLE:(X = 8, Y = 5, LIFETIME = 5) 
 WAIT:(HIT)
-MOLE:(X = 7, Y = 1, LIFETIME = 5) 
+MOLE:(X = 2, Y = 1, LIFETIME = 5) 
 WAIT:(HIT)
-MOLE:(X = 4, Y = 3, LIFETIME = 5)
+MOLE:(X = 3, Y = 4, LIFETIME = 5)
 WAIT:(HIT)
-MOLE:(X = 1, Y = 2, LIFETIME = 5) 
+MOLE:(X = 4, Y = 2, LIFETIME = 5) 
 WAIT:(HIT)
-MOLE:(X = 9, Y = 2, LIFETIME = 5) 
+MOLE:(X = 6, Y = 1, LIFETIME = 5) 
 WAIT:(HIT)
-MOLE:(X = 9, Y = 3, LIFETIME = 5)
+MOLE:(X = 6, Y = 5, LIFETIME = 5) 
 WAIT:(HIT)
-MOLE:(X = 5, Y = 4, LIFETIME = 5) 
+MOLE:(X = 7, Y = 2, LIFETIME = 5) 
 WAIT:(HIT)
-MOLE:(X = 5, Y = 1, LIFETIME = 5) 
+MOLE:(X = 2, Y = 3, LIFETIME = 5) 
 WAIT:(HIT)
-MOLE:(X = 8, Y = 4, LIFETIME = 5)
+MOLE:(X = 8, Y = 3, LIFETIME = 5) 
 WAIT:(HIT)
 MOLE:(X = 2, Y = 2, LIFETIME = 5) // A
 WAIT:(HIT)
@@ -365,16 +325,15 @@ MOLE:(X = 5, Y = 5, LIFETIME = 5)
 WAIT:(HIT)
 MOLE:(X = 8, Y = 2, LIFETIME = 5)
 WAIT:(HIT)
-SEGMENT:(ID = 11007, LABEL = Calibration Point)
+SEGMENT:(ID = 13260000, LABEL = Calibration Point)
 MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
 WAIT:(HIT)
-FEEDBACK:(TIME = 10)
-WAIT:(TIME = 10)
-SEGMENT:(ID = 12002, LABEL = Break) // Break w/ 2 Questions - About feedback
-MESSAGE:(LABEL = Algorithm_Question, TIME = 1)
-WAIT:(TIME=3)
-MODIFIER:(JUDGEMENT = MaxSpeed)
-SEGMENT:(ID = 10011, LABEL = Action) // Action feedback - Pattern B+A - JUDGEMENT SPEED
+SEGMENT:(ID = 13360000, LABEL = BreakBig) // Break w/ 2 Questions - About feedback GLOBAL
+MESSAGE:(LABEL = Feedback_Questions, TIME = 3)
+WAIT:(TIME=6)
+// Task Distance
+MODIFIER:(MOTORSPACE = Medium, PERFORMANCEFEEDBACK = Task, JUDGEMENT = Distance)
+SEGMENT:(ID = 13073143, LABEL = TaskDistance) // Task feedback - Pattern D+C - JUDGEMENT DISTANCE
 MOLE:(X = 6, Y = 4, LIFETIME = 5)  // D
 WAIT:(HIT)
 MOLE:(X = 8, Y = 5, LIFETIME = 5) 
@@ -415,16 +374,17 @@ MOLE:(X = 7, Y = 3, LIFETIME = 5)
 WAIT:(HIT)
 MOLE:(X = 3, Y = 3, LIFETIME = 5) 
 WAIT:(HIT)
-SEGMENT:(ID = 11007, LABEL = Calibration Point)
+SEGMENT:(ID = 13270000, LABEL = Calibration Point)
 MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
 WAIT:(HIT)
 FEEDBACK:(TIME = 10)
 WAIT:(TIME = 10)
-SEGMENT:(ID = 12002, LABEL = Break) // Break w/ 2 Questions - About feedback
+SEGMENT:(ID = 13370000, LABEL = Break) // Break w/ 2 Questions - About feedback
 MESSAGE:(LABEL = Algorithm_Question, TIME = 1)
 WAIT:(TIME=3)
-MODIFIER:(JUDGEMENT = Time)
-SEGMENT:(ID = 10011, LABEL = Action) // Action feedback - Pattern A+D - JUDGEMENT TIME
+// Task Speed
+MODIFIER:(JUDGEMENT = MaxSpeed)
+SEGMENT:(ID = 13083214, LABEL = TaskSpeed) // Task feedback - Pattern A+D - JUDGEMENT SPEED
 MOLE:(X = 2, Y = 2, LIFETIME = 5) // A
 WAIT:(HIT)
 MOLE:(X = 3, Y = 1, LIFETIME = 5) 
@@ -465,14 +425,65 @@ MOLE:(X = 2, Y = 3, LIFETIME = 5)
 WAIT:(HIT)
 MOLE:(X = 8, Y = 3, LIFETIME = 5) 
 WAIT:(HIT)
-SEGMENT:(ID = 11007, LABEL = Calibration Point)
+SEGMENT:(ID = 13280000, LABEL = Calibration Point)
 MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
 WAIT:(HIT)
 FEEDBACK:(TIME = 10)
 WAIT:(TIME = 10)
-SEGMENT:(ID = 12002, LABEL = BreakBig) // Break w/ 2 Questions - About feedback GLOBAL
+SEGMENT:(ID = 13380000, LABEL = Break) // Break w/ 2 Questions - About feedback
+MESSAGE:(LABEL = Algorithm_Question, TIME = 1)
+WAIT:(TIME=3)
+// Task Time
+MODIFIER:(JUDGEMENT = Time)
+SEGMENT:(ID = 13093321, LABEL = TaskTime) // Task feedback - Pattern B+A - JUDGEMENT TIME
+MOLE:(X = 2, Y = 4, LIFETIME = 5) // B
+WAIT:(HIT)
+MOLE:(X = 3, Y = 5, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 7, Y = 1, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 4, Y = 3, LIFETIME = 5)
+WAIT:(HIT)
+MOLE:(X = 1, Y = 2, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 9, Y = 2, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 9, Y = 3, LIFETIME = 5)
+WAIT:(HIT)
+MOLE:(X = 5, Y = 4, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 5, Y = 1, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 8, Y = 4, LIFETIME = 5)
+WAIT:(HIT)
+MOLE:(X = 2, Y = 2, LIFETIME = 5) // A
+WAIT:(HIT)
+MOLE:(X = 3, Y = 1, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 7, Y = 5, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 6, Y = 3, LIFETIME = 5)
+WAIT:(HIT)
+MOLE:(X = 9, Y = 4, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 1, Y = 4, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 1, Y = 3, LIFETIME = 5)
+WAIT:(HIT)
+MOLE:(X = 5, Y = 2, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 5, Y = 5, LIFETIME = 5) 
+WAIT:(HIT)
+MOLE:(X = 8, Y = 2, LIFETIME = 5)
+WAIT:(HIT)
+SEGMENT:(ID = 13290000, LABEL = Calibration Point)
+MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
+WAIT:(HIT)
+FEEDBACK:(TIME = 10)
+WAIT:(TIME = 10)
+SEGMENT:(ID = 13390000, LABEL = BreakBig) // Break w/ 2 Questions - About feedback GLOBAL
 MESSAGE:(LABEL = Feedback_Questions, TIME = 3)
 WAIT:(TIME=6)
-SEGMENT:(ID = 11007, LABEL = Calibration Point)
+SEGMENT:(ID = 13200000, LABEL = Calibration Point)
 MOLE:(X = 5, Y = 3, LIFETIME = 5) // MIDDLE, MIDDLE
 WAIT:(HIT)
