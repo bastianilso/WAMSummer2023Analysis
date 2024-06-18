@@ -1,0 +1,13 @@
+MiniPatternLabel;JudgementOrder;PatternSegmentLabel
+AC;DiSpTi;OperationDistance
+AB;DiTiSp;OperationSpeed
+AD;SpDiTi;OperationTime
+BC;SpTiDi;ActionDistance
+CA;TiDiSp;ActionSpeed
+BA;TiSpDi;ActionTime
+DA;NA;TaskDistance
+CB;NA;TaskSpeed
+CD;NA;TaskTime
+DC;NA;NA
+BD;NA;NA
+DB;NA;NA

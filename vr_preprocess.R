@@ -44,7 +44,7 @@ count = 0
 
 
 debug_flag = F
-M = M %>% filter(Participant %in% c(7))
+#M = M %>% filter(Participant %in% c(7))
 for (folderpath in M$i) {
   
   #browser()
@@ -88,6 +88,10 @@ for (folderpath in M$i) {
   if ( !("SessionProgram" %in% colnames(D)) ) {
     D = D %>% mutate(SessionProgram = SessionProgram.y)
   }
+  
+  # Ensure MotorSpace related column information is available throughout the dataset
+  motorspace_cols = colnames(D %>% select(contains("MotorSpace")))
+  D = D %>% tidyr::fill(all_of(motorspace_cols), .direction = c("down"))
   
   ####
   # Add Convenience Columns
@@ -170,10 +174,42 @@ for (folderpath in M$i) {
     JudgementOrder = str_remove(SessionProgram, "D3-3-2 Performance Feedback - ")
   )
   
-  # Import actual mini-patterns
-  patterns = read.csv("wam_pattern.csv", sep=";")
+  ####
+  # Determine true size of Motorspace and Wall
+  ####
   
-  D = D %>% left_join(patterns)
+  # Use "CountDown 0" to detect state of game before it begins.
+  W = D %>% filter(Event == "CountDown 0") %>% slice(1) %>%
+    summarize(x = c(unique(WallBoundsXMin),unique(WallBoundsXMin), unique(WallBoundsXMax), unique(WallBoundsXMax),unique(WallBoundsXMin)),
+              y = c(unique(WallBoundsYMin),unique(WallBoundsYMax), unique(WallBoundsYMax), unique(WallBoundsYMin),unique(WallBoundsYMin)))
+  MS = D %>% filter(Event == "MotorSpace Size Update", MotorSpaceName=="MotorSpaceR",PatternSegmentLabel=="Warmup") %>%
+    summarize(width = last(MotorSpaceWidth),
+              height = last (MotorSpaceHeight),
+              x = last(MotorSpaceCenterPositionX),
+              y = last(MotorSpaceCenterPositionY),
+              x0 = x - (width), # width is actually just half of the width, not full width.
+              y0 = y - (height),  #height is just half of actual height, not full height.
+              x1 = x + (width),
+              y1 = y + (height),
+              gainx = last(MotorSpaceGainX),
+              gainy = last(MotorSpaceGainY),
+              wx0 = x0 * gainx,
+    )
+  WS = D %>% filter(Event == "CountDown 0") %>% slice(1) %>%
+    summarize(x0 = last(WallBoundsXMin),
+              y0 = last(WallBoundsYMin),
+              x1 = last(WallBoundsXMax),
+              y1 = last(WallBoundsXMax),
+              width = last(WallBoundsXMax) -last(WallBoundsXMin),
+              height = last(WallBoundsYMax) -last(WallBoundsYMin))
+  
+  # Convert Mole locations to equivalent locations in motorspace
+  D = D %>% mutate(
+    MolePositionMSX = scales::rescale(MolePositionWorldX, 
+                                      from=c(first(WS$x0),last(WS$x1)), to=c(MS$x0,MS$x1)),
+    MolePositionMSY = scales::rescale(MolePositionWorldY, 
+                                      from=c(first(WS$y0),last(WS$y1)), to=c(MS$y0,MS$y1))
+    )
   
   ####
   # Verify pattern distances
@@ -181,22 +217,35 @@ for (folderpath in M$i) {
   # grouped by patternsegmentlabel to exclude distances forming across breaks.
   # todo: verify whether we also consider patternsegmentlabel (e.g. exclude breaks) when calculating action trajectories.
   
-  Distances = D %>% filter(Event == "Mole Spawned") %>% select(Participant, MiniPatternLabel, SessionProgram,Framecount,MoleId, MolePositionWorldX, MolePositionWorldY, PatternSegmentLabel) %>%
+  # Note: Plotting of base pattern moved to plot_basepatterns.R
+  
+  # Import actual mini-patterns
+  patterns = read.csv("wam_pattern.csv", sep=";")
+  
+  D = D %>% left_join(patterns)
+  
+  Distances = D %>% filter(Event == "Mole Spawned") %>% select(Participant, MiniPatternLabel, SessionProgram,Framecount,MoleId, 
+                                                               MolePositionWorldX, MolePositionWorldY, PatternSegmentLabel,
+                                                               MolePositionMSX, MolePositionMSY) %>%
     group_by(PatternSegmentLabel) %>%
     mutate (NextMolePositionWorldX = lead(MolePositionWorldX),
-            NextMolePositionWorldY = lead(MolePositionWorldY)) %>%
+            NextMolePositionWorldY = lead(MolePositionWorldY),
+            NextMolePositionMSX = lead(MolePositionMSX),
+            NextMolePositionMSY = lead(MolePositionMSY),) %>%
     filter(!is.na(NextMolePositionWorldX)) %>% rowwise() %>%
     mutate(MolePositionWorld = list(data.frame('x'=c(MolePositionWorldX,NextMolePositionWorldX),
                                                'y'=c(MolePositionWorldY,NextMolePositionWorldY))),
+           MolePositionMS = list(data.frame('x'=c(MolePositionMSX,NextMolePositionMSX),
+                                               'y'=c(MolePositionMSY,NextMolePositionMSY))),
+           dist_moleMS = st_length(st_linestring(data.matrix(data.frame(MolePositionMS)))),
            dist_mole = st_length(st_linestring(data.matrix(data.frame(MolePositionWorld))))
-    )
+    ) 
+  save(Distances, file = 'plot_patterns.rda', compress=TRUE)
   
-  fig %>% add_trace(data = Distances %>% filter(MiniPatternLabel == "AC"), x=~MolePositionWorldX, y=~MolePositionWorldY,
-                    type='scatter',mode='markers')
-  
-    Distanes = Distances %>%group_by(PatternSegmentLabel) %>% 
+    Sdd = Distances %>% group_by(PatternSegmentLabel) %>% 
     summarise(
       distance = sum(dist_mole),
+      distanceMS = sum(dist_moleMS),
       Participant = unique(Participant),
       SessionProgram = unique(SessionProgram),
       MiniPatternLabel = unique(MiniPatternLabel),
@@ -208,12 +257,10 @@ for (folderpath in M$i) {
   #Sd %>% group_by(PatternSegmentLabel) %>% summarise(dist_prog = sum(distance), dist_prog_sd = sd(distance), dist_prog_mean = mean(distance)) %>% view() # check whether, after the shuffle, any segments had higher weight.
   
   if (!is.null(Sd)) {
-    Sd = Sd %>% bind_rows(Distances)
+    Sd = Sd %>% bind_rows(Sdd)
   } else {
-    Sd = Distances
+    Sd = Sdd
   }
-
-  fig %>% add_trace(data = D, x=~NextMolePositionX, )
   
 
   ####
@@ -232,8 +279,17 @@ for (folderpath in M$i) {
                   HitOrder = ifelse(PlayPeriod %in% c("PreGame","PostGame"), NA, HitOrder),
     )
   
+  #browser()
+  
+  # flag the first action (mole to hit) after each break, so they can be filtered out.
+  # important to do before we filter out cols coming before mole spawned, otherwise
+  # they cant be identified.
+  D = D %>% group_by(HitOrder) %>% dplyr::mutate(
+    flag = any(Event %in% c("CountDown 0")),
+    HitOrder = ifelse(flag, NA, HitOrder),
+  ) %>% select(-flag)
+  
   # filter out cols that come before Mole Spawned
-  #untested
   D = D %>% group_by(HitOrder) %>% dplyr::mutate(
     flag = ifelse(Event %in% c("Mole Spawned"), 1, 0),
     hit_flag = cumsum(flag),
@@ -253,6 +309,8 @@ for (folderpath in M$i) {
     HitOrder = ifelse(flag, NA, HitOrder),
   ) %>% select(-flag)
   
+
+  
   # add timestamps for when hit started and ended
   D = D %>% group_by(HitOrder) %>% dplyr::mutate(
     HitStartTimestamp = first(Timestamp),
@@ -263,11 +321,11 @@ for (folderpath in M$i) {
   # Timestamp[Event == "Game Started"], units="secs"),
   # total_time = as.integer(total_time),
   if (debug_flag) {
-    print(last(D$Program))
+    print(last(D$SessionProgram))
     print(last(D$Participant))
     #browser()
     # visualize/debug   
-    D %>% filter(!Event == "Sample") %>% select(Timestamp, Event, HitOrder,ActionOrder, MoleOrder,MoleId) %>% view()
+    D %>% filter(!Event == "Sample") %>% select(Timestamp, Event, HitOrder,ActionOrder, MoleOrder,MoleId,PatternSegmentLabel) %>% view()
     D %>% filter(HitOrder == 17) %>% select(Framecount,Timestamp, Event, HitOrder,ActionOrder, MoleOrder, HitStartTimestamp,HitEndTimestamp,MoleId,RightControllerLaserPosWorldX,RightControllerLaserPosWorldY) %>% view()
     # visualize single mole life
     fig %>% add_trace(data = D %>% filter(HitOrder == 17), type='scatter',mode='markers', 
@@ -389,11 +447,8 @@ for (folderpath in M$i) {
   # Debug view of action trajectories:
   #D %>% filter(Event != "Sample", ActionOrder==12) %>% select(MoleHitPositionWorldX, SessionProgram, PlayPeriod,Timestamp, Event, MoleId, MoleOrder,ActionOrder,MoleSpawnOrder,PointerShootOrder) %>% view()
   
-  # Use "CountDown 0" to detect state of game before it begins.
-  W = D %>% filter(Event == "CountDown 0", !is.na(ActionOrder), !is.na(WallBoundsXMax)) %>%
-    summarize(x = c(unique(WallBoundsXMin),unique(WallBoundsXMin), unique(WallBoundsXMax), unique(WallBoundsXMax),unique(WallBoundsXMin)),
-              y = c(unique(WallBoundsYMin),unique(WallBoundsYMax), unique(WallBoundsYMax), unique(WallBoundsYMin),unique(WallBoundsYMin)))
-  
+
+  #browser()
   # Six Quadrants
   # 
   
@@ -404,6 +459,46 @@ for (folderpath in M$i) {
                                              RightControllerLaserPosWorldY < na.omit(WallBoundsYMin[Event=="CountDown 0"]) ~ FALSE,
                                              RightControllerLaserPosWorldY > na.omit(WallBoundsYMax[Event=="CountDown 0"]) ~ FALSE,
                                              TRUE ~ TRUE))
+
+  # # Plot motorspace movements with moles (converted to MS space)
+  # 
+  # D %>% filter(PlayPeriod == "Game", !is.na(ActionOrder), LaserWithinWallBounds) %>%
+  #   plot_ly(name='markers', ., color=I('rgba(0.8,0.8,0.8,0.70)'), type='scatter', mode="markers",
+  #           x=~RightControllerPosWorldX, y=~RightControllerPosWorldY,
+  #           marker=list(size=2)) %>%
+  #   #add_trace(name='markers', ., color=I('purple'), type='scatter', mode="markers",
+  #   #           x=~LeftControllerLaserPosWorldX, y=~LeftControllerLaserPosWorldY,
+  #   #           marker=list(size=2)) %>%
+  #   add_trace(data=MS,name='line', x = ~c(x0,x1,x1,x0,x0),
+  #             y=~c(y0,y0,y1,y1,y0), mode='lines', line=list(width=1.15), color=I('black'))  %>%
+  #   add_trace(data=D,name="MoleTargets", x=~MolePositionMSX,
+  #             y=~MolePositionMSY,symbol=I('o'),marker=list(size=12))
+  # 
+  # # Plot laser target movements - beware, this includes Unity's positional glitches and sticky wall boundaries.
+  #   
+  # fig_c <- D %>% filter(PlayPeriod == "Game", !is.na(ActionOrder), LaserWithinWallBounds) %>%
+  #   plot_ly(name='markers', ., color=I('rgba(0.8,0.8,0.8,0.70)'), type='scattergl', mode="markers",
+  #           x=~RightControllerLaserPosWorldX, y=~RightControllerLaserPosWorldY,
+  #           marker=list(size=2)) %>%
+  #   #add_trace(name='markers', ., color=I('purple'), type='scatter', mode="markers",
+  #   #           x=~LeftControllerLaserPosWorldX, y=~LeftControllerLaserPosWorldY,
+  #   #           marker=list(size=2)) %>%
+  #   add_trace(name='line', ., x = W$x,
+  #             y=W$y, mode='lines', line=list(width=1.15), color=I('black')) %>%
+  #   add_trace(name="MoleTargets", ., x=~MoleHitPositionWorldX,
+  #             y=~MoleHitPositionWorldY,symbol=I('o'),marker=list(size=12)) %>%
+  #   add_trace(name="MoleHit", ., x=~MoleHitPositionWorldX,
+  #             y=~MoleHitPositionWorldY,symbol=I('circle-x-open'),marker=list(size=15)) %>%
+  #   add_trace(name="DistRHit", ., x=~DistRHitPositionWorldX, color=I('red'),
+  #             y=~DistRHitPositionWorldY,symbol=I('circle-x-open'),marker=list(size=12)) %>%
+  #   add_trace(name="DistLHit", ., x=~DistLHitPositionWorldX, color=I('blue'),
+  #             y=~DistLHitPositionWorldY,symbol=I('circle-x-open'),marker=list(size=12)) %>%
+  #   add_trace(name="PrevMoleHit", ., x=~MolePrevHitPositionWorldX,
+  #             y=~MolePrevHitPositionWorldY,symbol=I('circle-x-open'),marker=list(size=12)) %>%
+  #   add_trace(name="MoleAlive", ., x=~MoleAlivePositionWorldX[MoleType=="Target"],
+  #             y=~MoleAlivePositionWorldY[MoleType=="Target"],symbol=I('o'),marker=list(size=12)) %>%
+  #   layout(showlegend=F, xaxis=list(showticklabels=F),yaxis=list(showticklabels=F,zeroline=F))
+  
   
   
   #browser()
@@ -466,13 +561,114 @@ for (folderpath in M$i) {
   #browser()
   #orca(fig, paste0("figures/",str_remove_all(folderpath,"/"),".pdf"), width=750, height=750)
   
-  #browser()
+
   ####
-  # Arrange and Summarize
+  # Arrange again
   #### 
   
-  
   D = D %>% arrange(Timestamp)
+  
+  ####
+  # Interpolate position and speed for every 'Sample' event, to create time-equidistant sampling.
+  #### 
+  
+  # todo: estimate also hovering time using the Mole Hover/Unhover events?
+  
+  Di = D %>% filter(PlayPeriod == "Game", Event=="Sample", !is.na(HitOrder)) %>% group_by(Participant, HitOrder) %>%
+    summarise(
+      PlayPeriod = unique(PlayPeriod),
+      Event = unique(Event),
+      Session = unique(Session),
+      JudgementType = unique(JudgementType,na.rm=T),
+      PerformanceFeedback = unique(PerformanceFeedback,na.rm=T),
+      FeedbackJudge = paste0(PerformanceFeedback,JudgementType),
+      MoleSpawnOrder = unique(MoleSpawnOrder),
+      timestampmin = min(Timestamp),
+      timestampmax = max(Timestamp),
+      movement_time = timestampmax-timestampmin,
+      hertz = 1 / as.numeric(movement_time),
+      time_delta = 0.01, # every row is now 10ms
+      timestamp_interp = seq(timestampmin, timestampmax, by=0.01),
+      RightControllerPosWorldX = approx(Timestamp, RightControllerPosWorldX, xout = timestamp_interp)$y,
+      RightControllerPosWorldY = approx(Timestamp, RightControllerPosWorldY, xout = timestamp_interp)$y,
+      RightControllerLaserPosWorldX = approx(Timestamp, RightControllerLaserPosWorldX, xout = timestamp_interp)$y,
+      RightControllerLaserPosWorldY = approx(Timestamp, RightControllerLaserPosWorldY, xout = timestamp_interp)$y,
+      HeadCameraRotEulerX = approx(Timestamp, HeadCameraRotEulerX, xout = timestamp_interp)$y,
+      HeadCameraRotEulerY = approx(Timestamp, HeadCameraRotEulerY, xout = timestamp_interp)$y,
+      HeadCameraRotEulerZ = approx(Timestamp, HeadCameraRotEulerZ, xout = timestamp_interp)$y,
+    ) %>% rename(Timestamp = timestamp_interp) %>% group_by(Participant,HitOrder) %>% 
+    mutate(
+      dx = c(diff(RightControllerPosWorldX),NA),
+      dy = c(diff(RightControllerPosWorldY),NA),
+      dt = 0.01,
+      speed = sqrt(dx^2 + dy^2) / dt,
+      timestampi_max = max(Timestamp),
+      timestampi_min = min(Timestamp),
+      timestamp_rel = as.numeric(Timestamp - timestampi_min)
+      # normalize coordinates and time 
+    )
+
+  # Smooth the speed using a spline with degree 2
+  # TODO: calculate smooth speed using values normalized to 0-1
+  # TODO: figure out how to set the right smoothing coefficient.
+  #Di = Di %>% group_by(Participant,HitOrder) %>% filter(!is.na(speed)) %>%
+  #  mutate(
+  #    speed_smooth = predict(loess(speed ~ timestamp_rel, data = ., degree = 2, span = 0.3), timestamp_rel)
+  #  ) %>% right_join(Di)
+
+  
+  # Extract the smoothed speed values
+  #interp_data$smoothed_speed <- predict(smooth_speed, interp_data$timestamp)$y
+  
+  if (debug_flag) {
+    D %>% filter(HitOrder == 17) %>% select(Framecount,Timestamp, Event, HitOrder,ActionOrder, MoleOrder, HitStartTimestamp,HitEndTimestamp,MoleId,RightControllerLaserPosWorldX,RightControllerLaserPosWorldY) %>% view()
+
+   fig %>% add_trace(name="raw",data = Di, type='scatter',mode='markers', 
+                              x=~timestamp_rel, y=~speed) %>%
+      add_trace(name="interpolated",data = Di, type='scatter',mode='markers', 
+                x=~timestamp_rel, y=~speed_smooth) %>%
+      layout(title=list(font=list(size=15), xanchor="center", xref="paper",
+                        text=~movement_time),
+             xaxis=list(range=c(0.2,0.6), zeroline=F, tickfont=list(size=15)),
+             yaxis=list(range=c(0.8,1.2), zeroline=F, tickfont=list(size=15), showticklabels=T))
+    
+    # visualize speed and speed_smoothed
+    fig_c = fig %>% add_trace(name="real",data = Di %>% filter(Participant==9, HitOrder %in% c(100)), type='scatter',mode='markers', 
+                              x=~timestamp_rel, y=~speed) %>%
+      layout(title=list(font=list(size=15), xanchor="center", xref="paper",
+                        text=~movement_time),
+             xaxis=list(zeroline=F, tickfont=list(size=15)),
+             yaxis=list(zeroline=F, tickfont=list(size=15), showticklabels=T))
+    
+    fig_d = fig %>% add_trace(name="interpolated",data = Di %>% filter(Participant==9, HitOrder %in% c(100)), type='scatter',mode='markers', 
+                              x=~timestamp_rel, y=~speed_smooth) %>%
+      layout(title=list(font=list(size=15), xanchor="center", xref="paper",
+                        text=~movement_time),
+             xaxis=list(zeroline=F, tickfont=list(size=15)),
+             yaxis=list(zeroline=F, tickfont=list(size=15), showticklabels=T))
+    subplot(fig_c,fig_d)
+    orca(subplot(fig_c,fig_d), "fig/speed_smoothed_timeequidistant.pdf", width=1024, height=512)
+    # visualize trajectory
+    fig_c = fig %>% add_trace(name="interpolated",data = Di %>% filter(Participant==9, HitOrder %in% c(187,188,189)), type='scatter',mode='markers', 
+                      x=~RightControllerPosWorldX, y=~RightControllerPosWorldY) %>%
+      layout(title=list(font=list(size=15), xanchor="center", xref="paper",
+                        text=~movement_time),
+             xaxis=list(range=c(0.2,0.6), zeroline=F, tickfont=list(size=15)),
+             yaxis=list(range=c(0.8,1.2), zeroline=F, tickfont=list(size=15), showticklabels=T))
+    
+    fig_d = fig %>% add_trace(name="raw", data = D %>% filter(Participant==9, HitOrder %in% c(187,188,189)), type='scatter',mode='markers', 
+                      x=~RightControllerPosWorldX, y=~RightControllerPosWorldY) %>%
+      layout(title=list(font=list(size=15), xanchor="center", xref="paper",
+                        text=" "),
+             xaxis=list(range=c(0.2,0.6), zeroline=F, tickfont=list(size=15)),
+             yaxis=list(range=c(0.8,1.2), zeroline=F, tickfont=list(size=15), showticklabels=T))
+    # Plot comparison of interpolated movement vs raw movement.
+    subplot(fig_c,fig_d)
+    orca(subplot(fig_c,fig_d), "fig/movement_interpolated_timeequidistant.pdf", width=1024, height=512)
+  }
+  ####
+  # Summarize to Actions
+  #### 
   
   # Filter out Warmup and Breaks.
   invalid_segments = c("Break","BreakBig","Warmup","None")
@@ -482,15 +678,15 @@ for (folderpath in M$i) {
   # we need to ensure no NA values to do any calculations with sf.
   # This only extracts features from the 'Sample' events - otherwise we might get
   # weird sampling rate/values (? need to investigate further)
-  S = D %>% ungroup() %>% filter(Event == "Sample", PlayPeriod == "Game", !is.na(RightControllerLaserPosWorldX),
-                   !is.na(HitOrder)) %>% group_by(Participant,HitOrder) %>%
+  S = Di %>% ungroup() %>% filter(Event == "Sample", PlayPeriod == "Game", !is.na(RightControllerLaserPosWorldX),
+                   !is.na(HitOrder)) %>% group_by(Participant,HitOrder) %>% rownames_to_column("rowid") %>%
     summarize(eventCount = length(Event),
               Participant = unique(Participant),
               Session = unique(Session),
               #time_delta_mean = mean(time_delta, na.rm=T),
               #time_delta_sd = sd(time_delta, na.rm=T),
-              #time_start = first(Timestamp),
-              #time_end = last(Timestamp),
+              time_start = first(Timestamp),
+              time_end = last(Timestamp),
               #duration = last(Timestamp) - first(Timestamp),
               #PointerShootOrder = paste(unique(PointerShootOrder, na.rm=T)),
               HitOrder = unique(HitOrder,na.rm=T),
@@ -524,14 +720,37 @@ for (folderpath in M$i) {
               HeadCameraRotEuler = list(data.frame('x'=HeadCameraRotEulerX,'y'=HeadCameraRotEulerY,'z'=HeadCameraRotEulerZ)),
               travel_head = st_length(st_linestring(data.matrix(data.frame(HeadCameraRotEuler)))),
               travel_arm = st_length(st_linestring(data.matrix(data.frame(RightControllerPosWorld)))),
+              travel_arm_euc = st_length(st_linestring(data.matrix(data.frame(RightControllerPosWorld_euc)))),
               travel_laser = st_length(st_linestring(data.matrix(data.frame(RightControllerLaserPosWorld)))),
               travelR_laser = st_length(st_linestring(data.matrix(data.frame(RightControllerLaserPosWorldR)))),
               travelL_laser = st_length(st_linestring(data.matrix(data.frame(RightControllerLaserPosWorldL)))),
-              duration = sum(time_delta, na.rm=T)
+              duration = sum(time_delta, na.rm=T),
+              peak_speed = max(speed,na.rm=T),
+              peak_speed_index = first(rowid[speed==max(speed,na.rm=T)]), # first() takes care of NAs
+              time_to_peak_speed = sum(time_delta[rowid < peak_speed_index],na.rm=T),
+              #peak_speed_smooth = max(speed_smooth,na.rm=T),
+              #peak_speed_smooth_index = first(rowid[speed_smooth==max(speed_smooth,na.rm=T)]), # first() takes care of NAs
+              #time_to_peak_speed_smooth = sum(time_delta[rowid < peak_speed_smooth_index],na.rm=T)
+              peak_speed_to_target = sum(time_delta[rowid > peak_speed_index],na.rm=T),
+              peak_speed_to_target_pct = (peak_speed_to_target / duration) * 100,
               # Calculate straightness trajectory
               # 
               )
 
+  
+  # fig_c <- fig %>% add_trace(data=S, type='scatter',mode='marker', color=I('darkgrey'),
+  #                   x=~bind_rows(RightControllerPosWorld)$x, y=~bind_rows(RightControllerPosWorld)$y) %>%
+  #         add_trace(data=S, x=~bind_rows(RightControllerPosWorld_euc)$x, y=~bind_rows(RightControllerPosWorld_euc)$y) %>%
+  #         layout(showlegend=F, xaxis=list(showticklabels=F),yaxis=list(showticklabels=F,zeroline=F))
+  # orca(fig_c, "fig/movement_cleaned.pdf", width=756, height=756)
+  # # should also render an equivalent "dirty" one.
+  # fig_c <- fig %>% add_trace(data=D, type='scatter',mode='marker', color=I('darkgrey'),
+  #                            x=~RightControllerPosWorldX, y=~RightControllerPosWorldY) %>%
+  #   layout(showlegend=F, xaxis=list(showticklabels=F),yaxis=list(showticklabels=F,zeroline=F))
+  # orca(fig_c, "fig/movement_dirty.pdf", width=756, height=756)
+  
+  
+  #browser()
   S = W %>% summarize(
     W_widthMin = min(x),
     W_widthMax = max(x),
@@ -546,8 +765,15 @@ for (folderpath in M$i) {
   S = D %>% ungroup() %>% filter(PlayPeriod == "Game", !is.na(HitOrder),!is.na(Event), Event != "Sample", LaserWithinWallBounds) %>% 
     group_by(Participant,HitOrder) %>%
     summarize(
-      Event = list(data.frame('Event'=Event, 'Type'=EventType,'MoleId'=MoleId, 'MoleOrder' = MoleOrder, 'Time' = Timestamp))
+      Event = list(data.frame('Event'=Event, 'Type'=EventType,'MoleId'=MoleId, 'MoleOrder' = MoleOrder, 'Time' = Timestamp)),
+      MolePositionMS_euc = list(data.frame('x'=last(MolePositionMSX),
+                                           'y'=last(MolePositionMSY))),
+      MolePositionWorld_euc = list(data.frame('x'=last(MolePositionWorldX),
+                                              'y'=last(MolePositionWorldY))),
+      travel_mole_euc = st_length(st_linestring(data.matrix(data.frame(MolePositionWorld_euc)))),
     ) %>% right_join(S)
+  
+  # Merge sampled starting point of controller with mole end-point.
   
   
   # Save to Summary of Actions
@@ -565,7 +791,7 @@ for (folderpath in M$i) {
 
 # Save Dataset as RDA
 save(Sa, file = 'data_all_actions.rda', compress=TRUE)
-
+save(Sd, file = 'data_patterns.rda', compress=TRUE)
 ####
 # Export to Python for machine learning
 ####
@@ -627,8 +853,12 @@ Lf = Lf %>% filter(Participant <= valid_pids)
 
 # Mutate VR Experience, Game Experience
 Lf = Lf %>% mutate(VRExperience = ifelse(VRExperience == "yes",1,0),
-                 GameExperience = ifelse(VRExperience == "yes",1,0),
+                 GameExperience = ifelse(GameExperience == "yes",1,0),
                  PredictedPattern = ifelse(PredictedPattern == "yes",1,0))
+
+Lf %>% group_by(Participant) %>% 
+  summarise(PredictedPattern = paste(unique(PredictedPattern),collapse=" "),
+            GameExp = paste(unique(GameExperience),collapse=" ")) %>% view()
 
 # Create Normalized versions of pacing, how much help, liked help
 
@@ -651,7 +881,7 @@ Lf = Lf %>% mutate(PerformanceFeedback = Condition,
 # Filling
 
 # columns which need filling:
-fill_per_participant = c('VRExperience','GameExperience','OverallExperience.f')
+fill_per_participant = c('VRExperience','GameExperience','OverallExperience.f','PredictedPattern')
 fill_per_condition = c('FeedbackSenseDiff.f','FeedbackDistract.f','FeedbackAssessPerf.f','FeedbackEncourage.f','FeedbackNotice.f','FeedbackOverallFeel.f')
 
 Lf = Lf %>% group_by(Participant) %>% 

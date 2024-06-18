@@ -1,0 +1,6 @@
+dataset;x;y;desc;xtitle;ytitle;miny;maxy;annotation;out;width;height
+Sa;PerformanceFeedback.f;duration_ms;Movement Time (ms); ; ;1200;1600;miniplot  of feedback;fig/bar_error_feedback_duration.pdf;265;265
+Sa;PerformanceFeedback.f;straightness;Straightness(0-1); ; ;0.75;1;miniplot  of feedback;fig/bar_error_feedback_straightness.pdf;265;265
+Sa;PerformanceFeedback.f;peak_speed;Peak Speed (m/s); ; ;0.75;2.5;miniplot  of feedback;fig/bar_error_feedback_peakspeed.pdf;265;265
+Sa;PerformanceFeedback.f;peak_speed_to_target_pct;% After Peak Speed; ; ;0.5;0.65;miniplot  of feedback;fig/bar_error_feedback_peak_speed_to_target_pct.pdf;265;265
+Sa;PerformanceFeedback.f;time_to_peak_speed_ms;Time to Peak Speed; ; ;400;700;miniplot  of feedback;fig/bar_error_feedback_time_to_peak_speed_ms.pdf;265;265
