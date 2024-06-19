@@ -580,6 +580,7 @@ for (folderpath in M$i) {
       Event = unique(Event),
       Session = unique(Session),
       JudgementType = unique(JudgementType,na.rm=T),
+      JudgementOrder = unique(JudgementOrder,na.rm=T),
       PerformanceFeedback = unique(PerformanceFeedback,na.rm=T),
       FeedbackJudge = paste0(PerformanceFeedback,JudgementType),
       MoleSpawnOrder = unique(MoleSpawnOrder),
@@ -608,7 +609,7 @@ for (folderpath in M$i) {
       # normalize coordinates and time 
     )
 
-  # Smooth the speed using a spline with degree 2
+  # Smooth the speed using a spline with degree 2 polynomial
   # TODO: calculate smooth speed using values normalized to 0-1
   # TODO: figure out how to set the right smoothing coefficient.
   #Di = Di %>% group_by(Participant,HitOrder) %>% filter(!is.na(speed)) %>%
@@ -621,6 +622,7 @@ for (folderpath in M$i) {
   #interp_data$smoothed_speed <- predict(smooth_speed, interp_data$timestamp)$y
   
   if (debug_flag) {
+    browser()
     D %>% filter(HitOrder == 17) %>% select(Framecount,Timestamp, Event, HitOrder,ActionOrder, MoleOrder, HitStartTimestamp,HitEndTimestamp,MoleId,RightControllerLaserPosWorldX,RightControllerLaserPosWorldY) %>% view()
 
    fig %>% add_trace(name="raw",data = Di, type='scatter',mode='markers', 
@@ -773,7 +775,6 @@ for (folderpath in M$i) {
       travel_mole_euc = st_length(st_linestring(data.matrix(data.frame(MolePositionWorld_euc)))),
     ) %>% right_join(S)
   
-  # Merge sampled starting point of controller with mole end-point.
   
   
   # Save to Summary of Actions
@@ -786,7 +787,11 @@ for (folderpath in M$i) {
 }
 
 
-
+# Unify MaxSpeed to Speed
+Sa = Sa %>% mutate(
+  FeedbackJudge = str_replace_all(FeedbackJudge, c("OperationMaxSpeed" = "OperationSpeed", "ActionMaxSpeed" = "ActionSpeed","TaskMaxSpeed" = "TaskSpeed")),
+  JudgementType = str_replace_all(JudgementType, c("MaxSpeed" = "Speed")),
+)
 
 
 # Save Dataset as RDA
@@ -845,22 +850,29 @@ save(Sae_clean, file = 'data_machine_learning.rda')
 # Combine with Likert Scale Data
 ###
 
-Lf <- gsheet2tbl('https://docs.google.com/spreadsheets/d/1zIO96Miqkcs8eVEhIOl4ZNAv9UEz6eLxXjbFwD0R_rY/edit#gid=1857813124')
+Lf <- gsheet2tbl('https://docs.google.com/spreadsheets/d/1zIO96Miqkcs8eVEhIOl4ZNAv9UEz6eLxXjbFwD0R_rY/edit?gid=1857813124#gid=1857813124')
 
 valid_pids = 24
 
 Lf = Lf %>% filter(Participant <= valid_pids)
 
 # Mutate VR Experience, Game Experience
-Lf = Lf %>% mutate(VRExperience = ifelse(VRExperience == "yes",1,0),
-                 GameExperience = ifelse(GameExperience == "yes",1,0),
-                 PredictedPattern = ifelse(PredictedPattern == "yes",1,0))
+Lf = Lf %>% mutate(VRExperience = ifelse(VRExperience == "yes","yes","no"),
+                 GameExperience = ifelse(GameExperience == "yes","yes","no"),
+                 PredictedPattern = ifelse(PredictedPattern == "yes","yes","no"))
 
-Lf %>% group_by(Participant) %>% 
-  summarise(PredictedPattern = paste(unique(PredictedPattern),collapse=" "),
-            GameExp = paste(unique(GameExperience),collapse=" ")) %>% view()
+# Check whether we can filldown without issues
+#Lf %>% group_by(Participant) %>% 
+#  summarise(PredictedPattern = paste(unique(PredictedPattern),collapse=" "),
+#            GameExp = paste(unique(GameExperience),collapse=" ")) %>% view()
 
 # Create Normalized versions of pacing, how much help, liked help
+
+# Cleanup JudgementType
+Lf = Lf %>% mutate(
+  Algorithm = str_replace_all(Algorithm, c("MaxSpeed" = "Speed")),
+  Condition = str_remove(Condition, "FB")
+)
 
 # Replace NA values with a '0' rating for help variables.
 Lf = Lf %>% mutate(PerformanceFeedback = Condition,
@@ -869,26 +881,32 @@ Lf = Lf %>% mutate(PerformanceFeedback = Condition,
                  AlgoCorrespondFastSlow.f = `With this algorithm, the feedback clearly corresponded to whether I was fast or slow.`,
                  HowMuchFeedback.f = `How much feedback did you get?`,
                  FeedbackQuality.f = `Overall, How good did the feedback feel?`,
+                 FeedbackQuantity.f = `How much feedback did you get?`,
                  OverallExperience.f = `OverallExperience`,
                  FeedbackOverallFeel.f = `Overall, how did the [blue tail/Checkmark/HeatMap] feedback make the you feel?`,
                  FeedbackNotice.f = `Overall, how much did you notice the [blue tail/checkmark/heatmap] feedback?`,
                  FeedbackEncourage.f = `“The [blue tail/checkmark/heatmap] feedback encouraged me to play faster.”`,
                  FeedbackAssessPerf.f = `“With the [blue tail/checkmark/heatmap] feedback I could easily assess how well I was performing.”`,
                  FeedbackDistract.f = `How much did you feel that the [blue tail/checkmark/heatmap] feedback distracted you?`,
-                 FeedbackSenseDiff.f = `“With the [blue tail/checkmark/heatmap] feedback, I sensed the difference between the three algorithms.”`)
+                 FeedbackSenseDiff.f = `“With the [blue tail/checkmark/heatmap] feedback, I sensed the difference between the three algorithms.”`) %>%
+  mutate(across(ends_with(".f"), ~ factor(.,levels=c(1:7))))
 
 
 # Filling
 
 # columns which need filling:
-fill_per_participant = c('VRExperience','GameExperience','OverallExperience.f','PredictedPattern')
-fill_per_condition = c('FeedbackSenseDiff.f','FeedbackDistract.f','FeedbackAssessPerf.f','FeedbackEncourage.f','FeedbackNotice.f','FeedbackOverallFeel.f')
+fill_per_participant = c('VRExperience','GameExperience','OverallExperience.f','PredictedPattern','Age','Gender','Glasses')
+fill_per_feedback = c('FeedbackSenseDiff.f','FeedbackDistract.f','FeedbackAssessPerf.f','FeedbackEncourage.f','FeedbackNotice.f','FeedbackOverallFeel.f','FeedbackQuality.f','FeedbackQuantity.f')
 
 Lf = Lf %>% group_by(Participant) %>% 
   tidyr::fill(all_of(fill_per_participant), .direction='down')
 
-Lf = Lf %>% group_by(Participant,Condition) %>% 
-  tidyr::fill(all_of(fill_per_condition), .direction='down')
+Lf = Lf %>% group_by(Participant,PerformanceFeedback) %>% 
+  tidyr::fill(all_of(fill_per_feedback), .direction='down')
+
+# Save Likert responses as RDA
+save(Lf, file = 'data_all_experiential.rda', compress=TRUE)
+
 
 ####
 # Save Final Data

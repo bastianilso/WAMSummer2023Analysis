@@ -1,0 +1,19 @@
+dataset;x;y;desc;xtitle;ytitle;minx;maxx;miny;maxy;annotation;width;height;bandwidth;jitter
+Sa;PerformanceFeedback.f;FeedbackSenseDiff.f;“With this feedback, I sensed the \n difference between the three algorithms.”;; ;;;0.52;7.52;condition;365;365;0.5;0.2
+Sa;PerformanceFeedback.f;FeedbackDistract.f;“How much did you feel that the \n feedback distracted you?”;; ;;;0.52;7.52;condition;365;365;0.5;0.2
+Sa;PerformanceFeedback.f;FeedbackAssessPerf.f;“With the feedback I could easily assess \n how well I was performing.”;; ;;;0.52;7.52;condition;365;365;0.5;0.2
+Sa;PerformanceFeedback.f;FeedbackEncourage.f;“The feedback encouraged me to play \n faster.”;; ;;;0.52;7.52;condition;365;365;0.5;0.2
+Sa;PerformanceFeedback.f;FeedbackNotice.f;“Overall, how much did you notice the \n feedback?”;; ;;;0.52;7.52;condition;365;365;0.5;0.2
+Sa;PerformanceFeedback.f;FeedbackOverallFeel.f;“Overall, how did the feedback make \n you feel?”;; ;;;0.52;7.52;condition;365;365;0.5;0.2
+Sa;PerformanceFeedback.f;FeedbackQuality.f;“Overall, How good did the feedback feel?”;;;;;0.52;7.52;condition;365;365;0.5;0.2
+Sa;PerformanceFeedback.f;FeedbackQuantity.f;“How much feedback did you get?”;;;;;0.52;7.52;condition;365;365;0.5;0.2
+Sa;FeedbackJudge.fs;AlgoCorrespondFastSlow.f;“With this algorithm, the feedback clearly \n corresponded to whether I was fast or slow.”;;;;;0.52;7.52;FeedbackJudge.fs;625;425;0.5;0.2
+Sa;Gender;AlgoCorrespondFastSlow.f;Gender;;;-0.45;3;0.52;7.52;Gender;365;365;0.5;2
+Sa;GameExperience;AlgoCorrespondFastSlow.f;Game Experience;;;-0.45;3;0.52;7.52;GameExperience;365;365;0.5;2
+Sa;VRExperience;AlgoCorrespondFastSlow.f;VR Experience;;;-0.45;3;0.52;7.52;VRExperience;365;365;0.5;2
+Sa;PredictedPattern;AlgoCorrespondFastSlow.f;Belived they could predict the pattern;;;-0.45;3;0.52;7.52;PredictedPattern;365;365;0.5;2
+Sa;FeedbackJudge.fs;duration_ms;“With this algorithm, the feedback clearly \n corresponded to whether I was fast or slow.”;;;-0.45;;1000;1600;FeedbackJudge.fs;365;365;80;2
+Sa;Gender;duration_ms;Gender;;;-0.45;3;1000;1600;Gender;365;365;80;2
+Sa;GameExperience;duration_ms;Game Experience;;;-0.45;3;1000;1600;GameExperience;365;365;80;2
+Sa;VRExperience;duration_ms;VR Experience;;;-0.45;3;1000;1600;VRExperience;365;365;80;2
+Sa;PredictedPattern;duration_ms;Belived they could predict the pattern;;;-0.45;3;1000;1600;PredictedPattern;365;365;80;2

@@ -1,10 +1,12 @@
 library(plotly)  # load plotly first to avoid it overriding mutate!
 library(sf)
 library(tidyverse)
-
+library(lme4)
 
 #load('data_feedback.rda')
 load('data_all_actions.rda')
+load('data_patterns.rda')
+load('data_all_experiential.rda')
 source("utils/visutils.R")
 fig <- plot_ly() %>%
   config(scrollZoom = TRUE, displaylogo = FALSE, modeBarButtonsToRemove = c("pan2d","select2d","hoverCompareCartesian", "toggleSpikelines","zoom2d","toImage", "sendDataToCloud", "editInChartStudio", "lasso2d", "drawclosedpath", "drawopenpath", "drawline", "drawcircle", "eraseshape", "autoScale2d", "hoverClosestCartesian","toggleHover", "")) %>%
@@ -25,6 +27,16 @@ Sa <- Sa %>% rowwise() %>% mutate(
   )
 )
 
+###
+# Remove trajectories - causes issues with joining.
+###
+traj = c("RightControllerLaserPosWorldL","RightControllerPosWorldL","HeadCameraRotEuler","RightControllerLaserPosWorldR",
+         "RightControllerPosWorldR","RightControllerLaserPosWorld","RightControllerPosWorld","RightControllerLaserPosWorld_euc",
+         "RightControllerPosWorld_euc","RightControllerLaserPosWorld_norm","RightControllerPosWorld_norm",
+         "MolePositionWorld_euc","MolePositionMS_euc","Event")
+Sa <- Sa %>% select(-any_of(traj))
+
+
 # overshooting errors: Overshooting errors, referred to by Mandryk and Lough as exit errors, are errors in which the
 # participant exited and re-entered the primary target prior to mouse-down.
 #overshoot_error = NA,
@@ -36,11 +48,11 @@ Sa <- Sa %>% rowwise() %>% mutate(
 # movement time and represents the deceleration phase of the motion
 #percent_after_peak_speed = NA
 
-condition_order = c("OperationTime","OperationMaxSpeed","OperationDistance","ActionTime","ActionMaxSpeed","ActionDistance","TaskTime","TaskMaxSpeed","TaskDistance")
+condition_order = c("OperationTime","OperationSpeed","OperationDistance","ActionTime","ActionSpeed","ActionDistance","TaskTime","TaskSpeed","TaskDistance")
 condition_order_short = c("O-T","O-S","O-D","A-T","A-S","A-D","T-T","T-S","T-D")
 names(condition_order_short) <- condition_order
 feedback_order = c("Operation","Action","Task")
-judgement_order = c("Time","MaxSpeed","Distance")
+judgement_order = c("Time","Speed","Distance")
 
 Sa = Sa %>% filter(FeedbackJudge != "NoneNone") %>%  mutate(
   straightness = travel_arm_euc / travel_arm,
@@ -53,6 +65,30 @@ Sa = Sa %>% filter(FeedbackJudge != "NoneNone") %>%  mutate(
   PerformanceFeedback.f = factor(PerformanceFeedback,levels=feedback_order),
   JudgementType.f = factor(JudgementType,levels=judgement_order),
   )
+
+#Sd <- Sd %>% select(distance,distanceMS, Participant,SessionProgram,MiniPatternLabel,PatternSegmentLabel)
+
+#Sal <- Sa %>% select(Participant, HitOrder, FeedbackJudge,duration,
+#                      travel_arm,travel_arm_euc,time_to_peak_speed,peak_speed,
+#                      peak_speed_to_target_pct,JudgementType,PerformanceFeedback)
+
+# Combine with Experiential Measures (Lf) and base pattern measures (Sd)
+Sa <- Sa %>% left_join(Sd, by=c("Participant" = "Participant", "FeedbackJudge" = "PatternSegmentLabel"))
+Sa <- Sa %>% left_join(Lf, by=c("Participant" = "Participant", "FeedbackJudge" = "FeedbackJudge"))
+
+# Create variable to keep track of order
+Sa <- Sa %>% group_by(Participant, FeedbackJudge) %>% mutate(
+  Orderflag = row_number(),
+  Orderflag = ifelse(Orderflag < 2, Orderflag, 0)
+) %>% ungroup() %>% group_by(Participant) %>% mutate(
+  PlayOrder = cumsum(Orderflag),
+  PlayOrder = as.factor(PlayOrder)
+)
+
+Sa = Sa %>% mutate(
+  JudgementOrder = str_remove(SessionProgram, "D3-3-2 Performance Feedback - ")
+)
+
 
 
 
@@ -191,6 +227,28 @@ fig_c
 orca(fig_c, "fig/condition_feedbackDistract_violin.pdf", width=285, height=325)
 
 ###
+# Linear Mixed Models (LMM): Check significant differences
+###
+
+
+m.p = lmer(data=Sa, duration ~ (1|Participant))
+m.pp = lmer(data=Sa, duration ~ (1|Participant) + (1|MiniPatternLabel))
+m.pc = lmer(data=Sa, duration ~ FeedbackJudge + (1|Participant) + (1|MiniPatternLabel))
+
+
+m.pf = lmer(data=Sa, duration ~ PerformanceFeedback + (1|Participant))
+m.pj = lmer(data=Sa, duration ~ JudgementType + (1|Participant))
+
+# ancova? correlation follows the trial block.
+
+(anova(m.pp,m.pc))
+summary(m.pc)
+car::vif(m.pc)
+anova(m.p,m.pf)
+anova(m.p,m.pj)
+
+
+###
 # Plots of quantitative measures
 ###
 
@@ -208,20 +266,19 @@ orca(fig_c, "fig/condition_feedbackDistract_violin.pdf", width=285, height=325)
 # 2) Going up to peak velocity
 # 3) Slowing down/approaching target
 
-fig %>% add_trace(data=Sa, x=~FeedbackJudge, y=~duration, type='scatter')
+fig %>% add_trace(data=Sa, x=~FeedbackJudge, y=~duration, type='box')
 fig %>% add_trace(data=Sa, x=~FeedbackJudge, y=~straightness, type='box')
 fig %>% add_trace(data=Sa, x=~FeedbackJudge, y=~travel_arm, type='box')
 fig %>% add_trace(data=Sa, x=~FeedbackJudge, y=~time_to_peak_speed, type='box')
 fig %>% add_trace(data=Sa, x=~Participant, y=~, type='box')
-orca(fig_c, "fig/condition_feedbackSenseDiff_violin.pdf", width=325, height=355)
+fig %>% add_trace(data=Sa, x=~Participant,color=~PerformanceFeedback,y=~peak_speed, type='box', color=I("rgba(50, 50, 50, 1)"))
 
-Sa %>% group_by(FeedbackJudge) %>% summarise(feedbackJudge_sd = sd())
 
 plot_bar <- function(dataset, xlabel, ylabel, desc,xtitle,ytitle,miny,maxy) {
- #browser()
+  #browser()
   df = data.frame(x = dataset[[xlabel]],
-                  y = dataset[[ylabel]])
-  
+                  y = as.numeric(dataset[[ylabel]]))
+
   # Simple SD
   #df = df %>% group_by(x) %>% summarise(mean = mean(y), sd=sd(y))
   
@@ -240,63 +297,128 @@ plot_bar <- function(dataset, xlabel, ylabel, desc,xtitle,ytitle,miny,maxy) {
               x=~x, y=~mean.y, color=I('darkgrey'),
               error_y=~list(symmetric=FALSE, array=upper.ci.y - mean.y, arrayminus=mean.y-lower.ci.y, color = '#000000'), type='bar') %>%
     layout(margin=list(l=55,r=0,t=55,b=0),title=list(font=list(size=15), xanchor="center", xref="paper",
-                                                    text=desc), showlegend=F,
+                                                     text=desc), showlegend=F,
            xaxis=list(range=c(-0.45,~length(unique(x)) - 0.45), title=xtitle, zeroline=F, tickfont=list(size=15)),
            yaxis=list(range=c(miny,maxy), title=ytitle, zeroline=F, tickfont=list(size=15), showticklabels=T))
   
   return(fig_c)
 }
 
-# Movement Time (ms)
-fig_c <- plot_bar(Sa, "FeedbackJudge.fs","duration_ms","Movement Time per Task Condition", 
-         " ","Movement Time (ms)",1200,1600)
-fig_c
-orca(fig_c, "fig/bar_error_condition_duration.pdf", width=425, height=425)
+plot_violin <- function(dataset, xlabel, ylabel,plabel, desc,xtitle,ytitle,miny,maxy,minx = NA,maxx = NA,bwidth,jit) {
+  df = data.frame(x = dataset[[xlabel]],
+                  y = as.numeric(dataset[[ylabel]]),
+                  pid = dataset[[plabel]])
+  
+  df = df %>% group_by(x,pid) %>% summarise(y = median(y))
+  
+  if (is.na(minx)) {
+    minx = -0.45
+  }
+  if (is.na(maxx)) {
+    maxx = length(unique(df$x))-0.45
+  }
+  
+  # 95% Confidence intervals
+  # The intervals are currently based on a median value from each participants, because
+  # they need to be independent and are supposed to show where future participants
+  # performance are expected to be.
+  dfe = df %>%
+    group_by(x) %>%
+    summarise(mean.y = mean(y, na.rm = TRUE),
+              sd.y = sd(y, na.rm = TRUE),
+              n.y = n()) %>%
+    mutate(se.y = sd.y / sqrt(n.y),
+           lower.ci.y = mean.y - qt(1 - (0.05 / 2), n.y - 1) * se.y,
+           upper.ci.y = mean.y + qt(1 - (0.05 / 2), n.y - 1) * se.y)
+  
+  fig_c <- fig %>%
+    add_trace(data=df, x=~x, 
+              y=~jitter(y,amount=jit),
+              scalemode='width', points='all', pointpos=0,name='C', jitter=.65, #meanline=list(visible=T,width=4,color="rgba(0, 0, 0, 255)"),
+              marker=list(size=3,color="rgba(120,120,120, 0.35)",line=list(width=1.5,color="rgba(120,120,120, 0.15)")),
+              scalegroup='C', type="violin", spanmode="soft", width=1, fillcolor = "rgba(0, 0, 0, 0)", bandwidth=bwidth, color=I("rgba(120, 120, 120, 1)")) %>%
+    add_trace(data=dfe, x=~x,y=~mean.y, type='scatter',mode='markers', color=I("rgba(50, 50, 50, 1)"), 
+              error_y=~list(symmetric=FALSE, array=dfe$upper.ci.y - dfe$mean.y, arrayminus=dfe$mean.y-dfe$lower.ci.y) # todo: get lmer4 SE
+    )  %>%
+    layout(margin=list(l=55,r=0,t=55,b=0),title=list(font=list(size=15), xanchor="center", xref="paper",
+                                                    text=desc), showlegend=F,
+           xaxis=list(range=c(minx,maxx), title=xtitle, zeroline=F, tickfont=list(size=15)),
+           yaxis=list(range=c(miny,maxy), title=ytitle, zeroline=F, tickfont=list(size=15), showticklabels=T))
+  
+  return(fig_c)
+}
 
-# Straightness
-fig_c <- plot_bar(Sa, "FeedbackJudge.fs","straightness","Straightness per Task Condition", 
-                  " ","Straightness(0-1)",0.75,1)
-fig_c
-orca(fig_c, "fig/bar_error_condition_straightness.pdf", width=425, height=425)
+# Performance plots
+fig_plot = read.csv("wam_plot.csv", sep=";")
 
-# Peak Velocity
-fig_c <- plot_bar(Sa, "FeedbackJudge.fs","peak_speed","Peak Speed per Task Condition", 
-                  " ","Peak Speed (m/s)",0.75,2.5)
-fig_c
-orca(fig_c, "fig/bar_error_condition_peakspeed.pdf", width=425, height=425)
-# Todo: is Peak velocity negative ??
+# Initialize an empty list to store the plots
+figs <- list()
 
-# % After Peak Speed
-fig_c <- plot_bar(Sa, "FeedbackJudge.fs","peak_speed_to_target_pct","% After Peak Speed per Task Condition", 
-                  " ","% After Peak Speed",0.5,0.65)
-fig_c
-orca(fig_c, "fig/bar_error_condition_pct_after_peak_speed.pdf", width=425, height=425)
-# Todo: Re-run vr_preprocess to get proper pct
+# Use a for loop to iterate over each row in the data frame
+for (i in 1:nrow(fig_plot)) {
+  row <- fig_plot[i, ]
+  figs[[i]] <- plot_violin(dataset = Sa %>% ungroup(), 
+                        xlabel = row$x, 
+                        ylabel = row$y, 
+                        plabel = "Participant",
+                        desc = row$desc, 
+                        xtitle = row$xtitle, 
+                        ytitle = row$ytitle, 
+                        miny = row$miny, 
+                        maxy = row$maxy,
+                        bwidth = row$bandwidth,
+                        jit = row$jitter)
+  orca(figs[[i]], paste('fig/violin_error',row$annotation,row$y,'.pdf',sep="_"), width=row$width, height=row$height)
+}
 
-# Time to Peak Speed
-fig_c <- plot_bar(Sa, "FeedbackJudge.fs","time_to_peak_speed_ms","Time to Peak Speed per Task Condition", 
-                  " ","Time to Peak Speed (ms)",400,700)
-fig_c
-orca(fig_c, "fig/bar_error_condition_time_to_peak_speed.pdf", width=425, height=425)
+# Likert Plots
+fig_plot = read.csv("wam_plot_lf.csv", sep=";")
+
+# Initialize an empty list to store the plots
+figs <- list()
+
+# Use a for loop to iterate over each row in the data frame
+for (i in 1:nrow(fig_plot)) {
+  row <- fig_plot[i, ]
+  figs[[i]] <- plot_violin(dataset = Sa %>% ungroup(), 
+                           xlabel = row$x, 
+                           ylabel = row$y, 
+                           plabel = "Participant",
+                           desc = str_replace(row$desc,"\\\\n","\n"), 
+                           xtitle = row$xtitle, 
+                           ytitle = row$ytitle, 
+                           miny = row$miny, 
+                           maxy = row$maxy,
+                           minx = row$minx, 
+                           maxx = row$maxx,
+                           bwidth = row$bandwidth,
+                           jit = row$jitter)
+  orca(figs[[i]], paste('fig/violin_error',row$annotation,row$y,'.pdf',sep="_"), width=row$width, height=row$height)
+}
 
 
-# Miniplot per feedback type
-fig_bars = read.csv("wam_plot_bars.csv", sep=";")
-fig_bars$dataset = list(Sa)
+fig_c <- fig %>%
+  add_trace(data=Sa %>% group_by(Participant,Age) %>% summarise(duration_ms = median(duration_ms)), x=~Age, 
+            y=~jitter(duration_ms,amount=2),
+            marker=list(size=3,color="rgba(120,120,120, 0.80)",line=list(width=1.5,color="rgba(120,120,120, 0.15)")),
+            type='scatter',mode='marker',color=I("rgba(120, 120, 120, 1)")) %>%
+  layout(margin=list(l=55,r=0,t=55,b=0),title=list(font=list(size=15), xanchor="center", xref="paper",
+                                                   text='Age vs duration'), showlegend=F,
+         xaxis=list(range=c(21,42), title=' ', zeroline=F, tickfont=list(size=15)),
+         yaxis=list(range=c(1000,1600), title=' ', zeroline=F, tickfont=list(size=15), showticklabels=T))
+orca(fig_c, "fig/control_age_vs_duration.pdf", width=325, height=355)
 
-lapply(Sa,plot_bar,xlabel=fig_bars$x, ylabel=fig_bars$y, desc=fig_bars$desc,xtitle,ytitle,miny,maxy)
+fig_c <- fig %>%
+  add_trace(data=Sa %>% group_by(Participant,OverallExperience.f) %>% summarise(duration_ms = median(duration_ms)), x=~OverallExperience.f, 
+            y=~jitter(duration_ms,amount=2),
+            marker=list(size=3,color="rgba(120,120,120, 0.80)",line=list(width=1.5,color="rgba(120,120,120, 0.15)")),
+            type='scatter',mode='marker',color=I("rgba(120, 120, 120, 1)")) %>%
+  layout(margin=list(l=55,r=0,t=55,b=0),title=list(font=list(size=15), xanchor="center", xref="paper",
+                                                   text='Overall Experience vs duration'), showlegend=F,
+         xaxis=list(range=c(-0.45,7.45), title=' ', zeroline=F, tickfont=list(size=15)),
+         yaxis=list(range=c(1000,1600), title=' ', zeroline=F, tickfont=list(size=15), showticklabels=T))
 
-# Movement Time
-fig_c <- plot_bar(Sa, "PerformanceFeedback.f","duration_ms","Movement Time (ms)", 
-                  " "," ",1200,1600)
-fig_c
-orca(fig_c, "fig/bar_error_feedback_duration.pdf", width=265, height=265)
-
-
-
-###
-# Latex Table of Participants
-###
+orca(fig_c, "fig/control_overallexp_vs_duration.pdf", width=325, height=355)
 
 #############
 # Latex Table: Participants
