@@ -45,9 +45,12 @@ count = 0
 
 debug_flag = F
 #M = M %>% filter(Participant %in% c(7))
+# We should log when people manage to identify the target, e.g. their eyes look at the right target.
+# we should also log at the very least, a direct laser coming from the persons head orientation onto the board, so get an approximation of where the person is looking.
+# Pointer Hover Begin/End seems to be swapped around and ControllerHover is sometimes reporting the wrong MoleIds ??
+# ControllerHover problems seem to be case-by-case dependent, sometimes it is fine, other times its problematic.
 for (folderpath in M$i) {
   
-  #browser()
   D = LoadFromDirectory(folderpath)
   print(nrow(D))
   count = sum(count, nrow(D))
@@ -107,6 +110,7 @@ for (folderpath in M$i) {
     mutate(time_delta = case_when(Event == "Sample" ~ time_delta))
   
   # Create unique ID for each row index. Will be used for filter-join operations.
+  # rowindex is guaranteed to follow chronological progression of time.
   D = D %>% tibble::rownames_to_column("rowindex")
   
   # Create a "PlayPeriod" column to indicate: "PreGame", "Game" and "PostGame".
@@ -140,7 +144,6 @@ for (folderpath in M$i) {
            PerformanceFeedback = ifelse(grepl("Performance Feedback Set", Event), Event, NA),
            PerformanceFeedback = str_remove(PerformanceFeedback, "Performance Feedback Set "),
            )
-  #browser()
   
   # 'GameStarted' event might contain 'CalibrationPoint' during which is wrong.
   # clear any of that.
@@ -160,7 +163,6 @@ for (folderpath in M$i) {
   
   # Use 'CountDown 3' to choose an end-point for the segment, removing movement during countdown/game pause.
   #D = D %>% mutate(PatternSegmentLabel = ifelse(Event == "CountDown 3", "None", PatternSegmentLabel))
-  #browser()
   # Ensure all cols has labels from JudgementType and PerformanceFeedback 
   # only do it downwards - warmup has no judgement/fb
   label_cols = c("JudgementType", "PerformanceFeedback", "PatternSegmentLabel")
@@ -179,7 +181,7 @@ for (folderpath in M$i) {
   ####
   
   # Use "CountDown 0" to detect state of game before it begins.
-  W = D %>% filter(Event == "CountDown 0") %>% slice(1) %>%
+  W = D %>% filter(Event == "CountDown 0") %>% head(1) %>%
     summarize(x = c(unique(WallBoundsXMin),unique(WallBoundsXMin), unique(WallBoundsXMax), unique(WallBoundsXMax),unique(WallBoundsXMin)),
               y = c(unique(WallBoundsYMin),unique(WallBoundsYMax), unique(WallBoundsYMax), unique(WallBoundsYMin),unique(WallBoundsYMin)))
   MS = D %>% filter(Event == "MotorSpace Size Update", MotorSpaceName=="MotorSpaceR",PatternSegmentLabel=="Warmup") %>%
@@ -195,7 +197,7 @@ for (folderpath in M$i) {
               gainy = last(MotorSpaceGainY),
               wx0 = x0 * gainx,
     )
-  WS = D %>% filter(Event == "CountDown 0") %>% slice(1) %>%
+  WS = D %>% filter(Event == "CountDown 0") %>% head(1) %>%
     summarize(x0 = last(WallBoundsXMin),
               y0 = last(WallBoundsYMin),
               x1 = last(WallBoundsXMax),
@@ -279,7 +281,6 @@ for (folderpath in M$i) {
                   HitOrder = ifelse(PlayPeriod %in% c("PreGame","PostGame"), NA, HitOrder),
     )
   
-  #browser()
   
   # flag the first action (mole to hit) after each break, so they can be filtered out.
   # important to do before we filter out cols coming before mole spawned, otherwise
@@ -317,23 +318,105 @@ for (folderpath in M$i) {
     HitEndTimestamp = last(Timestamp)
   )
   
+  ####
+  # ControllerHover: Restore broken ControllerHover column and calcualate hover time and hover leaving time.
+  ####
+  #browser()
+  
+  # Fix ControllerHover, by ensuring that any Pointer Hover event before a hit has same ID as the hit.
+  # this fix only works in our case because we have a single target to hit - hard to generalize for WhackVR dashboard.
+  # Remove Pointer Hover Begin that has lower timestamp.
+  D = D %>% group_by(HitOrder) %>% mutate(
+      hasPointerHover = any(Event == "Pointer Hover Begin"),
+      firstMoleHit = first(MoleId[Event %in% c("Mole Hit","Mole Expired")]),
+      ControllerHover.fix = ifelse(Event == "Pointer Hover Begin", firstMoleHit,NA),
+      flag = max(rowindex[Event == "Pointer Hover Begin"]),
+      ControllerHover.fix = ifelse(hasPointerHover & rowindex == flag, ControllerHover.fix,NA),
+      flag = ifelse(is.na(ControllerHover.fix) & Event == "Pointer Hover Begin", T,F)
+  ) %>% filter(!flag)
+  
+  # Do a filldown to catch all Pointer Hover End, and then cleanup
+  # Also, if the mole was hovered multiple times (hover-in,hover-out), count the earliest hover and remove later occurences
+  D = D %>% ungroup() %>% tidyr::fill(ControllerHover.fix, .direction="down") %>%
+    mutate(
+      ControllerHover.fix = case_when(Event %in% c("Pointer Hover Begin", "Pointer Hover End") ~ ControllerHover.fix)
+    ) %>% group_by(HitOrder) %>%
+    mutate(
+      flag = min(rowindex[Event == "Pointer Hover Begin"]),
+      ControllerHover.fix = case_when(Event == "Pointer Hover Begin" & rowindex == flag ~  ControllerHover.fix,
+                                      Event == "Pointer Hover End" ~ ControllerHover.fix),
+      flag = ifelse(is.na(ControllerHover.fix) & Event == "Pointer Hover Begin", T,F)
+    ) %>% filter(!flag)
+    
+  
+  # Remove unnecessary Pointer Hover Ends - choose the Pointer Hover end furthest away from Pointer Hover Begin.
+  # This mean Begin/End dont necessarily represent the same hover point, however, we do ensure they are the same moleID.
+  D = D %>% mutate(
+    MoleIdHover = ifelse(is.na(MoleId), ControllerHover.fix, MoleId),
+  ) %>% group_by(MoleIdHover) %>% 
+    mutate(
+      flag = ifelse(Event == "Pointer Hover Begin",rowindex,NA),
+      flagmole = ifelse(Event == "Pointer Hover Begin",MoleIdHover,NA),
+      flaghit = ifelse(Event == "Mole Hit",rowindex,NA),
+      flaghitmole = ifelse(Event == "Mole Hit",MoleIdHover,NA),
+    ) %>% ungroup() %>% tidyr::fill(flag,flagmole,flaghit,flaghitmole, .direction="downup")  %>%
+    mutate(
+      #exclude hovers attributed to other moles.
+      #exclude hover ends that come before the hit - the minimum happened end hover is always after a hit like 27706 P1, 3754 P1, 
+      flag = ifelse(Event == "Pointer Hover End" & MoleIdHover == flagmole & rowindex > flaghit & MoleIdHover == flaghitmole,flag,NA),
+    ) %>%
+    group_by(flag) %>% mutate(
+      # use minimum pointer hover end coming after hit - solves situations with multiple hover ends. 
+      flag2 = min(rowindex[Event == "Pointer Hover End"]),
+      ControllerHover.fix = case_when(Event == "Pointer Hover End" & rowindex == flag2 ~  ControllerHover.fix,
+                                      Event == "Pointer Hover Begin" ~ ControllerHover.fix),
+      flag3 = ifelse(is.na(ControllerHover.fix) & Event == "Pointer Hover End", T,F)
+    ) %>% ungroup() %>% filter(!flag3) %>% select(-flag,-flag2,-flag3,-flagmole)
+  
+  # Calculate Hover Leave Phase
+  D = D %>% mutate(
+    flag = ifelse(Event == "Pointer Hover Begin",rowindex,NA),
+  ) %>% ungroup() %>% tidyr::fill(flag, .direction="downup") %>%
+    group_by(flag) %>% mutate(
+      time_hover_end = first(Timestamp[Event == "Pointer Hover End"]),
+      time_mole_hit = first(Timestamp[Event == "Mole Hit"]), # there may be more hits without corresponding hovers.
+      ControllerLeaveTarget_ms = difftime(time_hover_end,time_mole_hit),
+      ControllerLeaveTarget_ms = ifelse(Event %in% c("Pointer Hover Begin","Pointer Hover End","Mole Hit"),ControllerLeaveTarget_ms,NA)
+    )
+  
+  # Calculate Hover Arrive Phase
+  D = D %>% mutate(
+    flag = ifelse(Event == "Pointer Hover Begin",rowindex,NA),
+    flagmole = ifelse(Event == "Pointer Hover Begin",MoleIdHover,NA),
+  ) %>% ungroup() %>% tidyr::fill(flag,flagmole, .direction="downup") %>%
+    mutate(
+      flag = ifelse(Event == "Mole Hit" & MoleIdHover != flagmole,NA,flag), # ensure we dont include hits with other ID than our mole.
+    ) %>% 
+    group_by(flag) %>% mutate(
+      time_hover_begin = first(Timestamp[Event == "Pointer Hover Begin"]),
+      time_mole_hit = first(Timestamp[Event == "Mole Hit"]), # there may be more hits without corresponding hovers.
+      ControllerHoverTarget_ms = difftime(time_mole_hit,time_hover_begin),
+      ControllerHoverTarget_ms = ifelse(Event %in% c("Pointer Hover Begin","Pointer Hover End","Mole Hit"),ControllerHoverTarget_ms,NA)
+    )
+  
   # total_time = difftime(Timestamp[Event %in% c("Game Stopped", "Game Finished")], 
   # Timestamp[Event == "Game Started"], units="secs"),
   # total_time = as.integer(total_time),
   if (debug_flag) {
     print(last(D$SessionProgram))
     print(last(D$Participant))
-    #browser()
     # visualize/debug   
-    D %>% filter(!Event == "Sample") %>% select(Timestamp, Event, HitOrder,ActionOrder, MoleOrder,MoleId,PatternSegmentLabel) %>% view()
-    D %>% filter(HitOrder == 17) %>% select(Framecount,Timestamp, Event, HitOrder,ActionOrder, MoleOrder, HitStartTimestamp,HitEndTimestamp,MoleId,RightControllerLaserPosWorldX,RightControllerLaserPosWorldY) %>% view()
+    D %>% filter(Event %in% c("Mole Hit","Pointer Hover Begin","Pointer Hover End")) %>% select(ControllerHover.fix,hasPointerHover,Timestamp, Event, ControllerHover, MoleId, HitOrder,ActionOrder, MoleOrder,PatternSegmentLabel) %>% view()
+    D %>% filter(Event %in% c("Mole Spawned","Mole Hit","Pointer Hover Begin","Pointer Hover End")) %>% select(flag,flagmole,rowindex,Timestamp, Event,time_mole_hit,time_hover_begin,ControllerLeaveTarget_ms,ControllerHoverTarget_ms,ControllerHover.fix, MoleIdHover,MoleId, HitOrder,ActionOrder, MoleOrder,PatternSegmentLabel) %>% view()
+    D %>% filter(HitOrder == 1) %>% select(Framecount,Timestamp, Event, ControllerHover.fix,hasPointerHover,ControllerHover,HitOrder,ActionOrder, MoleOrder, HitStartTimestamp,HitEndTimestamp,MoleId,RightControllerLaserPosWorldX,RightControllerLaserPosWorldY) %>% view()
     # visualize single mole life
-    fig %>% add_trace(data = D %>% filter(HitOrder == 17), type='scatter',mode='markers', 
-                      x=~RightControllerPosWorldX, y=~RightControllerPosWorldY) %>%
+    fig %>% add_trace(data = D %>% filter(HitOrder == 3) %>% tidyr::fill(RightControllerPosWorldX, .direction='downup'),
+                      type='scatter',mode='markers+text', 
+                      x=~RightControllerPosWorldX, y=~Framecount, text=~as.character(ControllerHover)) %>%
       layout(title=list(font=list(size=15), xanchor="center", xref="paper",
                         text=~difftime(last(Timestamp),first(Timestamp))),
              xaxis=list(range=c(-5,5), zeroline=F, tickfont=list(size=15)),
-             yaxis=list(range=c(-1.5,5), zeroline=F, tickfont=list(size=15), showticklabels=T))
+             yaxis=list(zeroline=F, tickfont=list(size=15), showticklabels=T))
     # summarize lengths, check they have realistic durations
     D %>% filter(!is.na(HitOrder)) %>% group_by(HitOrder) %>% summarise(
       duration = difftime(last(Timestamp),first(Timestamp))
@@ -448,7 +531,6 @@ for (folderpath in M$i) {
   #D %>% filter(Event != "Sample", ActionOrder==12) %>% select(MoleHitPositionWorldX, SessionProgram, PlayPeriod,Timestamp, Event, MoleId, MoleOrder,ActionOrder,MoleSpawnOrder,PointerShootOrder) %>% view()
   
 
-  #browser()
   # Six Quadrants
   # 
   
@@ -500,8 +582,6 @@ for (folderpath in M$i) {
   #   layout(showlegend=F, xaxis=list(showticklabels=F),yaxis=list(showticklabels=F,zeroline=F))
   
   
-  
-  #browser()
   
   # D %>% filter(PlayPeriod == "Game", !is.na(ActionOrder)) %>%
   #   group_by(ActionOrder) %>%
@@ -558,7 +638,6 @@ for (folderpath in M$i) {
   # todo: show how much was visible to people in the headset.
   
   #fig
-  #browser()
   #orca(fig, paste0("figures/",str_remove_all(folderpath,"/"),".pdf"), width=750, height=750)
   
 
@@ -568,11 +647,17 @@ for (folderpath in M$i) {
   
   D = D %>% arrange(Timestamp)
   
+  # Cleanup Pointer Hover End and Begin by swapping them.
+  D = D %>% mutate(
+    Event = str_replace_all(Event, c("Pointer Hover End" = "Hover Begin", "Pointer Hover Begin" = "Hover End")),
+  )
+  
   ####
   # Interpolate position and speed for every 'Sample' event, to create time-equidistant sampling.
   #### 
   
   # todo: estimate also hovering time using the Mole Hover/Unhover events?
+  # todo: estimate also search/initial reaction using the point in which the target leaves the previous target?
   
   Di = D %>% filter(PlayPeriod == "Game", Event=="Sample", !is.na(HitOrder)) %>% group_by(Participant, HitOrder) %>%
     summarise(
@@ -623,7 +708,7 @@ for (folderpath in M$i) {
   
   if (debug_flag) {
     browser()
-    D %>% filter(HitOrder == 17) %>% select(Framecount,Timestamp, Event, HitOrder,ActionOrder, MoleOrder, HitStartTimestamp,HitEndTimestamp,MoleId,RightControllerLaserPosWorldX,RightControllerLaserPosWorldY) %>% view()
+    D %>% filter(HitOrder == 2) %>% select(Framecount,Timestamp, Event, HitOrder,ActionOrder, MoleOrder, HitStartTimestamp,HitEndTimestamp,MoleId,RightControllerLaserPosWorldX,RightControllerLaserPosWorldY) %>% view()
 
    fig %>% add_trace(name="raw",data = Di, type='scatter',mode='markers', 
                               x=~timestamp_rel, y=~speed) %>%
@@ -727,12 +812,14 @@ for (folderpath in M$i) {
               travelR_laser = st_length(st_linestring(data.matrix(data.frame(RightControllerLaserPosWorldR)))),
               travelL_laser = st_length(st_linestring(data.matrix(data.frame(RightControllerLaserPosWorldL)))),
               duration = sum(time_delta, na.rm=T),
+              speed_data = list(data.frame('x'=speed,
+                                      't'=Timestamp)),
               peak_speed = max(speed,na.rm=T),
               peak_speed_index = first(rowid[speed==max(speed,na.rm=T)]), # first() takes care of NAs
               time_to_peak_speed = sum(time_delta[rowid < peak_speed_index],na.rm=T),
               #peak_speed_smooth = max(speed_smooth,na.rm=T),
               #peak_speed_smooth_index = first(rowid[speed_smooth==max(speed_smooth,na.rm=T)]), # first() takes care of NAs
-              #time_to_peak_speed_smooth = sum(time_delta[rowid < peak_speed_smooth_index],na.rm=T)
+              #time_to_peak_speed_smooth = sum(time_delta[rowid < peak_speed_smooth_index],na.rm=T),
               peak_speed_to_target = sum(time_delta[rowid > peak_speed_index],na.rm=T),
               peak_speed_to_target_pct = (peak_speed_to_target / duration) * 100,
               # Calculate straightness trajectory
@@ -752,7 +839,6 @@ for (folderpath in M$i) {
   # orca(fig_c, "fig/movement_dirty.pdf", width=756, height=756)
   
   
-  #browser()
   S = W %>% summarize(
     W_widthMin = min(x),
     W_widthMax = max(x),
@@ -763,7 +849,6 @@ for (folderpath in M$i) {
   ) %>% bind_cols(S)
   
   #browser()
-  
   S = D %>% ungroup() %>% filter(PlayPeriod == "Game", !is.na(HitOrder),!is.na(Event), Event != "Sample", LaserWithinWallBounds) %>% 
     group_by(Participant,HitOrder) %>%
     summarize(
@@ -773,6 +858,8 @@ for (folderpath in M$i) {
       MolePositionWorld_euc = list(data.frame('x'=last(MolePositionWorldX),
                                               'y'=last(MolePositionWorldY))),
       travel_mole_euc = st_length(st_linestring(data.matrix(data.frame(MolePositionWorld_euc)))),
+      ControllerLeaveTarget_ms = unique(na.omit(ControllerLeaveTarget_ms)),
+      ControllerHoverTarget_ms = unique(na.omit(ControllerHoverTarget_ms)),
     ) %>% right_join(S)
   
   

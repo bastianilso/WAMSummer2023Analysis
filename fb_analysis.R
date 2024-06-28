@@ -2,6 +2,9 @@ library(plotly)  # load plotly first to avoid it overriding mutate!
 library(sf)
 library(tidyverse)
 library(lme4)
+library(MuMIn)
+library(ordinal)
+source("utils/clmcalcutils.R")
 
 #load('data_feedback.rda')
 load('data_all_actions.rda')
@@ -15,10 +18,8 @@ fig <- plot_ly() %>%
 ###
 # Create Aggregate Summaries
 ###
-
-# Calculate travel_euc
 Sa <- Sa %>% rowwise() %>% mutate(
-  travel_arm_euc = st_length(
+  speed = st_length(
     st_cast(
       st_line_sample(
         st_linestring(data.matrix(data.frame(RightControllerPosWorld))),
@@ -26,6 +27,79 @@ Sa <- Sa %>% rowwise() %>% mutate(
       "LINESTRING")
   )
 )
+
+###
+# Create a global speed trajectory
+###
+
+speed_data_list <- Sa$speed_data
+
+# use the mean time, so the speed represents the mean duration of an action.
+timemean = mean(Sa$duration_ms,na.rm=T)
+
+# convert timestamps to relative time.
+speed_data_list2 <- lapply(speed_data_list, function(df) {
+  df$time = as.numeric(difftime(df$t,min(df$t,na.rm=T)))*1000
+  timemax = max(df$time)
+  df$time = scales::rescale(df$time,from=c(0,timemax), to=c(0,timemean))
+  return(df)
+})
+                         
+max_time <- max(sapply(speed_data_list2, function(df) max(df$time)))
+min_time <- min(sapply(speed_data_list2, function(df) min(df$time)))
+
+common_time_grid <- seq(min_time, max_time, length.out = 300)
+interpolated_matrix <- matrix(NA, nrow = length(speed_data_list), ncol = length(common_time_grid))
+
+for (i in 1:length(speed_data_list2)) {
+  speed_values <- speed_data_list2[[i]]$x
+  time_values <- speed_data_list2[[i]]$time
+  if (length(time_values) > 1) {
+  interpolated_speeds <- approx(time_values, speed_values, xout = common_time_grid)$y
+  interpolated_matrix[i, ] <- interpolated_speeds
+  }
+}  
+
+mean_trajectory <- colMeans(interpolated_matrix, na.rm = TRUE)
+
+mean_trajectory_df <- data.frame(time = common_time_grid, mean_speed = mean_trajectory)
+
+plot_ly(mean_trajectory_df, x = ~time, y = ~mean_speed, type = 'scatter', mode = 'lines') %>%
+  layout(title = "Mean Trajectory of Speed Data",
+         xaxis = list(title = "Time"),
+         yaxis = list(title = "Mean Speed"))
+
+# Attempt a global average
+# we use medians for our aproximators for now because there are some pretty big outliers.
+Sa_a = Sa %>% ungroup() %>% summarise(
+  ControllerLeaveTarget_ms = median(ControllerLeaveTarget_ms),
+  ControllerHoverTarget_ms = median(ControllerHoverTarget_ms),
+  duration_ms = mean(duration_ms),
+)
+
+Sa_a = mean_trajectory_df %>% summarise(
+  peak_speed = max(mean_speed,na.rm=T),
+  time_to_peak_speed_total_ms = na.omit(time[mean_speed == peak_speed]),
+  peak_speed_to_target_total_ms = max(time) - time_to_peak_speed_total_ms,
+) %>% bind_cols(Sa_a)
+
+# Subtract Controller hover target from peak speed to target
+Sa_a = Sa_a %>% mutate(
+  peak_speed_to_target_ms = peak_speed_to_target_total_ms - ControllerHoverTarget_ms,
+  time_to_peak_speed_ms = time_to_peak_speed_total_ms - ControllerLeaveTarget_ms,
+)
+
+# todo: remove arbitrarily high values in ControllerHoverTarget/LeaveTarget
+
+# Re-calculate values based on the mean speed trajectory.
+
+peak_speed_index = first(rowid[speed==max(speed,na.rm=T)]), # first() takes care of NAs
+time_to_peak_speed = sum(time_delta[rowid < peak_speed_index],na.rm=T),
+#peak_speed_smooth = max(speed_smooth,na.rm=T),
+#peak_speed_smooth_index = first(rowid[speed_smooth==max(speed_smooth,na.rm=T)]), # first() takes care of NAs
+#time_to_peak_speed_smooth = sum(time_delta[rowid < peak_speed_smooth_index],na.rm=T),
+peak_speed_to_target = sum(time_delta[rowid > peak_speed_index],na.rm=T),
+peak_speed_to_target_pct = (peak_speed_to_target / duration) * 100,
 
 ###
 # Remove trajectories - causes issues with joining.
@@ -36,6 +110,8 @@ traj = c("RightControllerLaserPosWorldL","RightControllerPosWorldL","HeadCameraR
          "MolePositionWorld_euc","MolePositionMS_euc","Event")
 Sa <- Sa %>% select(-any_of(traj))
 
+
+# Remove calculations of last hits, as they are vrey long.
 
 # overshooting errors: Overshooting errors, referred to by Mandryk and Lough as exit errors, are errors in which the
 # participant exited and re-entered the primary target prior to mouse-down.
@@ -56,13 +132,17 @@ judgement_order = c("Time","Speed","Distance")
 
 Sa = Sa %>% filter(FeedbackJudge != "NoneNone") %>%  mutate(
   straightness = travel_arm_euc / travel_arm,
+  straightness_pct = straightness * 100,
   FeedbackJudge.f = factor(FeedbackJudge,levels=condition_order),
   FeedbackJudge.fs = FeedbackJudge,
   FeedbackJudge.fs = str_replace_all(FeedbackJudge.fs, condition_order_short),
   FeedbackJudge.fs = factor(FeedbackJudge.fs,levels=unname(condition_order_short)),
   time_to_peak_speed_ms = time_to_peak_speed * 1000,
+  ControllerHoverTarget_ms = ControllerHoverTarget_ms * 1000,
+  ControllerLeaveTarget_ms = ControllerLeaveTarget_ms * 1000,
+  peak_speed_to_target_ms = (peak_speed_to_target * 1000) - ControllerHoverTarget_ms,
   duration_ms = duration * 1000,
-  PerformanceFeedback.f = factor(PerformanceFeedback,levels=feedback_order),
+  PerformanceFeedback.f = factor(PerformanceFeedback,levels=feedback_order, ordered=T),
   JudgementType.f = factor(JudgementType,levels=judgement_order),
   )
 
@@ -74,7 +154,7 @@ Sa = Sa %>% filter(FeedbackJudge != "NoneNone") %>%  mutate(
 
 # Combine with Experiential Measures (Lf) and base pattern measures (Sd)
 Sa <- Sa %>% left_join(Sd, by=c("Participant" = "Participant", "FeedbackJudge" = "PatternSegmentLabel"))
-Sa <- Sa %>% left_join(Lf, by=c("Participant" = "Participant", "FeedbackJudge" = "FeedbackJudge"))
+Sa <- Sa %>% left_join(Lf)
 
 # Create variable to keep track of order
 Sa <- Sa %>% group_by(Participant, FeedbackJudge) %>% mutate(
@@ -126,6 +206,26 @@ sum_cols_sa = c("travel", "duration","travel_head")
 
 #Sa %>% group_by(PerformanceFeedback) %>% select(all_of(sum_cols_sa)) %>%
 #  summarise(across(everything(), ~ sum(., na.rm = TRUE))) %>% view()
+
+
+# Sc: Summary of Condition
+Sc = Sa %>% group_by(Participant, FeedbackJudge) %>%
+  summarise(
+    `Actions (n)` = max(HitOrder),
+    `Actions Analyzed (n)` = length(HitOrder)-1,
+    `Action Duration (sec)` = mean(duration),
+    `Action Arm Travel (meter)` = mean(travel_arm),
+    `Total Arm Travel (meter)` = sum(travel_arm),
+    `Euc. Arm Travel (meter)` = sum(travel_arm_euc),
+    `Straightness (0-1)` = mean(straightness),
+    `Peak Speed (m/s)` = mean(peak_speed),
+    `Time to Peak Speed (s)` = mean(time_to_peak_speed),
+    `Peak Speed to Target (\\%)` = mean(peak_speed_to_target_pct),
+    `Correspondence` = unique(AlgoCorrespondFastSlow.f),
+    MiniPatternLabel = unique(MiniPatternLabel),
+    `Performance Feedback` = PerformanceFeedback.f,
+    `Performance Metric` = unique(JudgementType),
+  )
 
 
 # Sp: Summary of Participants
@@ -230,23 +330,98 @@ orca(fig_c, "fig/condition_feedbackDistract_violin.pdf", width=285, height=325)
 # Linear Mixed Models (LMM): Check significant differences
 ###
 
-
-m.p = lmer(data=Sa, duration ~ (1|Participant))
-m.pp = lmer(data=Sa, duration ~ (1|Participant) + (1|MiniPatternLabel))
-m.pc = lmer(data=Sa, duration ~ FeedbackJudge + (1|Participant) + (1|MiniPatternLabel))
+# Variables affecting our model: Pattern used (random), Participant (random), distance (for MT/speed/etc.), time (for travel_length)
 
 
-m.pf = lmer(data=Sa, duration ~ PerformanceFeedback + (1|Participant))
-m.pj = lmer(data=Sa, duration ~ JudgementType + (1|Participant))
+
+# Null model: Expecting variance from participant and from pattern
+m.p = lmer(data=Sa, duration_ms ~ (1|Participant))
+m.pp = lmer(data=Sa, duration_ms ~ (1|Participant) + (1|MiniPatternLabel))
+(anova(m.p,m.pp))
+
+# 1) Testing combined feedback on movement time
+m.pc = lmer(data=Sa, duration_ms ~ FeedbackJudge + (1|Participant) + (1|MiniPatternLabel))
+(anova(m.pp,m.pc))
+m.pc.summary <- summary(m.pc)
+fixedtable = as.data.frame(m.pc.summary$coefficients) %>% 
+  rownames_to_column("Fixed Effect") %>%
+  mutate(Predicted = "Movement Time") 
+
+# 2) Testing feedback isolated on movement time
+m.pf = lmer(data=Sa, duration_ms ~ PerformanceFeedback + (1|Participant) + (1|MiniPatternLabel))
+(anova(m.pp,m.pf))
+m.pf.summary <- summary(m.pf)
+fixedtable = as.data.frame(m.pf.summary$coefficients) %>% 
+  rownames_to_column("Fixed Effect") %>%
+  mutate(Predicted = "Movement Time") 
+
+# 3) Testing judgement type isolated on movement time
+m.pp = lmer(data=Sa, straightness_pct ~ (1+FeedbackJudge|Participant) + (1+FeedbackJudge|MiniPatternLabel), REML=F)
+m.pj = lmer(data=Sa, straightness_pct ~ FeedbackJudge + (1+FeedbackJudge|Participant) + (1+FeedbackJudge|MiniPatternLabel), REML=F)
+(anova(m.pp,m.pj))
+m.pj.summary <- summary(m.pj)
+fixedtable = as.data.frame(m.pj.summary$coefficients) %>% 
+  rownames_to_column("Fixed Effect") %>%
+  mutate(Predicted = "Movement Time") 
+
+# Extract variances from VarCorr output
+variance_components <- VarCorr(m.pj)
+random_effects_variance <- as.data.frame(variance_components)$vcov
+residual_variance <- attr(variance_components, "sc")^2
+
+# Print the variances - if the random effects variance is orders of magnitude smaller than residual variance, the random effects might not contribute substantially.
+cat("Random Effects Variance:\n")
+print(random_effects_variance)
+cat("\nResidual Variance:\n")
+print(residual_variance)
+
+
+# Null model: Expecting variance from participant and from pattern
+m.p = clmm(data=Sc, as.ordered(Correspondence) ~ (1|Participant))
+m.pp = clmm(data=Sc, as.ordered(Correspondence) ~ (1|Participant) + (1|MiniPatternLabel))
+(anova(m.p,m.pp)) # significant, so we do need minipattern.
+
+m.pj = clmm(data=Sc, as.ordered(Correspondence) ~ `Performance Feedback` * `Performance Metric` + (1|Participant) + (1|MiniPatternLabel))
+(anova(m.pp,m.pj))
+m.pj.summary <- summary(m.pj)
+fixedtable = as.data.frame(m.pj.summary$coefficients) %>% 
+  rownames_to_column("Fixed Effect") %>%
+  mutate(Predicted = "AlgoCorrespondFastSlow.f") 
+
+
 
 # ancova? correlation follows the trial block.
 
-(anova(m.pp,m.pc))
-summary(m.pc)
+
+
 car::vif(m.pc)
 anova(m.p,m.pf)
 anova(m.p,m.pj)
 
+
+
+
+fixedtable = as.data.frame(modelperc.summary$coefficients) %>% 
+  rownames_to_column("Fixed Effect") %>%
+  filter(`Fixed Effect` %in% c("pam_rate", "fishLost")) %>%
+  mutate(Predicted = "Movement Time") %>% bind_rows(fixedtable)
+
+
+fixedtable = fixedtable %>%
+  rename(`p` = `Pr(>|z|)`) %>%
+  mutate(Estimate = format(round(Estimate,2), nsmall = 2),
+         `Std. Error` = format(round(`Std. Error`,2), nsmall = 2),
+         `z value` = format(round(`z value`,2), nsmall = 2),
+         `p` = format(round(`p`,3), nsmall = 3),
+         `p` = ifelse(`p` == "0.000", "$<$0.001", `p`),
+         across(everything(), ~ str_replace_all(.x, c("fishLost" = "Fish Lost",
+                                                      "pam_rate" = "PAM Rate"))))
+
+fixedtable <- fixedtable %>% group_by(Predicted) %>%
+  mutate(Predictor = " ") %>%
+  group_modify(~ add_row(Predictor=paste("\\underline{",.y,"}"),.before=0, .x)) %>%
+  ungroup() %>% replace(is.na(.)," ") %>% arrange(desc(Predicted)) %>%
+  select(Predicted = Predictor, `Fixed Effect`, `Estimate`, `Std. Error`, `z value`, `p`)
 
 ###
 # Plots of quantitative measures
@@ -500,5 +675,84 @@ writeLines(paste(Sp_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "
 
 
 ###
-# Save Aggregate Summaries
+# Dashboard prototyping
 ###
+# Bars only
+fig_b = fig %>% add_trace(data=Sa %>% head(1), y=-0.5, x =~ControllerLeaveTarget_ms, text=' ', textposition='inside',
+                          insidetextanchor='middle',type = 'bar', orientation = 'h', hoverinfo='text',
+                          hovertext=~paste0('Leaving Previous Target\n','Start: 0 ms', '\n','End: ', round(ControllerLeaveTarget_ms,0),'ms'),
+                          marker = list(color = '#d3ebfaff', line = list(color = '#1e7bb7ff', width = 3))) %>%
+  add_trace(data=Sa %>% head(1), y=-0.5, x =~time_to_peak_speed_ms, 
+            text=~paste('Acceleration','\n',round(time_to_peak_speed_ms,0),'ms'), textposition='inside', hoverinfo='text',
+            hovertext=~paste0('Initial Impulse Phase\n','Start: ',round(ControllerLeaveTarget_ms,0), 'ms\n','End: ', round(ControllerLeaveTarget_ms+time_to_peak_speed_ms,0),'ms'),
+            marker = list(color = 'rgba(255, 255, 255, 0.6)', line = list(color = '#1e7bb7ff', width = 3)),
+            insidetextanchor='middle',type = 'bar', color=I('#000000'), orientation = 'h') %>%
+  add_trace(data=Sa %>% head(1), y=-0.5, x =~peak_speed_to_target_ms, 
+            text=~paste('Deceleration','\n',round(peak_speed_to_target_ms,0),'ms'), textposition='inside', hoverinfo='text',
+            hovertext=~paste0('Deceleration Phase\n','Start: ',round(ControllerLeaveTarget_ms+time_to_peak_speed_ms,0), 'ms\n','End: ', round(ControllerLeaveTarget_ms+time_to_peak_speed_ms+peak_speed_to_target_ms,0),'ms'),
+            insidetextanchor='middle',type = 'bar', orientation = 'h', 
+            marker = list(color = 'rgba(255, 255, 255, 0.6)', line = list(color = '#8ad2f3ff', width = 3))) %>% 
+  add_trace(data=Sa %>% head(1), y=-0.5, x =~ControllerHoverTarget_ms, hoverinfo='text',
+            hovertext=~paste0('Dwell Phase\n', 'Start: ',round(ControllerLeaveTarget_ms+time_to_peak_speed_ms+peak_speed_to_target_ms,0), 'ms\n','End: ', round(ControllerLeaveTarget_ms+time_to_peak_speed_ms+peak_speed_to_target_ms+ControllerHoverTarget_ms,0),'ms'),
+            text=~paste('Hover','\n',round(ControllerHoverTarget_ms,0),'ms'), textposition='inside', 
+            insidetextanchor='middle',type = 'bar', orientation = 'h',
+            marker = list(color = 'rgba(255, 255, 255, 0.6)', line = list(color = '#a4de7fff', width = 3))) %>%
+  layout(showlegend=F, barmode='stack', hoverlabel=list(font=list(size=15)),
+         xaxis=list(title=' ',range=~c(-50,duration_ms+50),zeroline=F,showtitle=F,mirror=F),
+         yaxis=list(title=' ',dtick=NULL,ticks=NULL,zeroline=F,mirror=F, showline=F,showticklabels=F,range=c(-1.0,1.0)))
+
+# bars + speed chart
+fig_b %>% add_trace(data=Sa %>% head(1) %>% pull(speed_data) %>% as.data.frame(),
+                    x=~as.numeric(difftime(t,min(t)))*1000, y=~x, type='scatter',mode='lines', hoverinfo='text',
+                    hovertext=~paste0('Speed: ',round(x*100,2),'cm/s', '\n','Time: ', round(as.numeric(difftime(t,min(t)))*1000,0),'ms'),
+                    line = list(color = '#8d9096ff', width = 3))
+
+plot_action <- function(df, speed_df) {
+  #browser()
+# Bars only
+fig_b = fig %>% add_trace(data=df, y=-0.5, x =~ControllerLeaveTarget_ms, text=' ', textposition='inside',
+                  insidetextanchor='middle',type = 'bar', orientation = 'h', hoverinfo='text',
+                  hovertext=~paste0('Leaving Previous Target\n','Start: 0 ms', '\n','End: ', round(ControllerLeaveTarget_ms,0),'ms'),
+                  marker = list(color = '#d3ebfaff', line = list(color = '#1e7bb7ff', width = 3))) %>%
+        add_trace(data=df, y=-0.5, x =~time_to_peak_speed_ms, 
+                  text=~paste('Acceleration','\n',round(time_to_peak_speed_ms,0),'ms'), textposition='inside', hoverinfo='text',
+                  hovertext=~paste0('Initial Impulse Phase\n','Start: ',round(ControllerLeaveTarget_ms,0), 'ms\n','End: ', round(ControllerLeaveTarget_ms+time_to_peak_speed_ms,0),'ms'),
+                  marker = list(color = 'rgba(255, 255, 255, 0.6)', line = list(color = '#1e7bb7ff', width = 3)),
+                  insidetextanchor='middle',type = 'bar', color=I('#000000'), orientation = 'h') %>%
+        add_trace(data=df, y=-0.5, x =~peak_speed_to_target_ms, 
+                  text=~paste('Deceleration','\n',round(peak_speed_to_target_ms,0),'ms'), textposition='inside', hoverinfo='text',
+                  hovertext=~paste0('Deceleration Phase\n','Start: ',round(ControllerLeaveTarget_ms+time_to_peak_speed_ms,0), 'ms\n','End: ', round(ControllerLeaveTarget_ms+time_to_peak_speed_ms+peak_speed_to_target_ms,0),'ms'),
+                  insidetextanchor='middle',type = 'bar', orientation = 'h', 
+                  marker = list(color = 'rgba(255, 255, 255, 0.6)', line = list(color = '#8ad2f3ff', width = 3))) %>% 
+        add_trace(data=df, y=-0.5, x =~ControllerHoverTarget_ms, hoverinfo='text',
+                  hovertext=~paste0('Dwell Phase\n', 'Start: ',round(ControllerLeaveTarget_ms+time_to_peak_speed_ms+peak_speed_to_target_ms,0), 'ms\n','End: ', round(ControllerLeaveTarget_ms+time_to_peak_speed_ms+peak_speed_to_target_ms+ControllerHoverTarget_ms,0),'ms'),
+                  text=~paste('Hover','\n',round(ControllerHoverTarget_ms,0),'ms'), textposition='inside', 
+                  insidetextanchor='middle',type = 'bar', orientation = 'h',
+            marker = list(color = 'rgba(255, 255, 255, 0.6)', line = list(color = '#a4de7fff', width = 3))) %>%
+  layout(showlegend=F, barmode='stack', hoverlabel=list(font=list(size=15)),
+         xaxis=list(title=' ',range=~c(-50,duration_ms+50),zeroline=F,showtitle=F,mirror=F,ticksuffix = " ms"),
+         yaxis=list(title=' ',dtick=NULL,ticks=NULL,zeroline=F,mirror=F, showline=F,showticklabels=F,range=c(-1.0,1.0)))
+
+# bars + speed chart
+fig_b %>% add_trace(data=speed_df,
+            x=~time, y=~mean_speed, type='scatter',mode='lines', hoverinfo='text',
+            hovertext=~paste0('Speed: ',round(mean_speed*100,2),'cm/s', '\n','Time: ', round(time,2),'ms'),
+            line = list(color = '#8d9096ff', width = 3)) %>%
+          add_trace(data=speed_df, x=~c(first(time),last(time)),y=~c(mean(na.omit(mean_speed)),mean(na.omit(mean_speed))),type='scatter',mode='lines',
+                    line = list(color = '#8d9096ff', width = 1,dash='dash',hoverinfo='none',hovertext=' ')) %>%
+  add_trace(data=speed_df, x=~c(first(time),last(time)),y=~c(0,0),type='scatter',mode='lines',
+            line = list(color = '#8d9096ff', width = 1),hoverinfo='none',hovertext=' ') %>%
+  layout(hoverlabel=list(bgcolor = '#eaeaeaff')) %>%
+  add_annotations(ax=0,ay=-20,arrowhead=7,data=df,y=~peak_speed,x=~time_to_peak_speed_ms,text=~paste0('Peak Speed: ',round(peak_speed*100,2),'cm/s')) %>%
+  add_annotations(ax=0,ay=-50,arrowhead=6,xanchor = "center",data=speed_df,y=~last(mean_speed),x=~last(time),text=~paste0('Action End: ',round(last(time),0),'ms                           ')) %>%
+  add_annotations(xshift=25,yshift=15,showarrow=F,align="left",data=speed_df,y=~mean(na.omit(mean_speed)),x=~first(time),text=~paste0('Mean Speed:\n',round(mean(na.omit(mean_speed*100)),2),'cm/s'))
+
+}
+
+plot_action(Sa_a, mean_trajectory_df)
+  
+# Search Phase - approximated by when does the target leave the mole.
+# Coarse Movement Acceleration Phase
+# Fine Movement Deceleration Phase
+# Hover Movement Activation Phase
+# Corrective feedback is the last 10% of the motion
