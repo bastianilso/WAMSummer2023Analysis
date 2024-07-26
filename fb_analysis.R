@@ -1,16 +1,24 @@
 library(plotly)  # load plotly first to avoid it overriding mutate!
 library(sf)
+library(stats)
 library(tidyverse)
 library(lme4)
 library(MuMIn)
 library(ordinal)
-source("utils/clmcalcutils.R")
+library(PMCMRplus) # for friedman analysis - likert scales
+library(afex) # for repeated measures anova - perf. measures
+library(emmeans) # for rmanova post-hoc analysis
+library(MANOVA.RM)
+
+#source("utils/clmcalcutils.R")
+options(scipen = 999) # disable scientific notation
 
 #load('data_feedback.rda')
 load('data_all_actions.rda')
 load('data_patterns.rda')
 load('data_all_experiential.rda')
 source("utils/visutils.R")
+source("utils/lmecalcutils.R")
 fig <- plot_ly() %>%
   config(scrollZoom = TRUE, displaylogo = FALSE, modeBarButtonsToRemove = c("pan2d","select2d","hoverCompareCartesian", "toggleSpikelines","zoom2d","toImage", "sendDataToCloud", "editInChartStudio", "lasso2d", "drawclosedpath", "drawopenpath", "drawline", "drawcircle", "eraseshape", "autoScale2d", "hoverClosestCartesian","toggleHover", "")) %>%
   layout(dragmode = "pan", showlegend=T, xaxis=list(mirror=T, ticks='outside', showline=T), yaxis=list(mirror=T, ticks='outside', showline=T))
@@ -33,6 +41,8 @@ Sa <- Sa %>% rowwise() %>% mutate(
 ###
 
 speed_data_list <- Sa$speed_data
+
+Sa = Sa %>% mutate(duration_ms = duration * 1000)
 
 # use the mean time, so the speed represents the mean duration of an action.
 timemean = mean(Sa$duration_ms,na.rm=T)
@@ -93,13 +103,13 @@ Sa_a = Sa_a %>% mutate(
 
 # Re-calculate values based on the mean speed trajectory.
 
-peak_speed_index = first(rowid[speed==max(speed,na.rm=T)]), # first() takes care of NAs
-time_to_peak_speed = sum(time_delta[rowid < peak_speed_index],na.rm=T),
+#peak_speed_index = first(rowid[speed==max(speed,na.rm=T)]), # first() takes care of NAs
+#time_to_peak_speed = sum(time_delta[rowid < peak_speed_index],na.rm=T),
 #peak_speed_smooth = max(speed_smooth,na.rm=T),
 #peak_speed_smooth_index = first(rowid[speed_smooth==max(speed_smooth,na.rm=T)]), # first() takes care of NAs
 #time_to_peak_speed_smooth = sum(time_delta[rowid < peak_speed_smooth_index],na.rm=T),
-peak_speed_to_target = sum(time_delta[rowid > peak_speed_index],na.rm=T),
-peak_speed_to_target_pct = (peak_speed_to_target / duration) * 100,
+#peak_speed_to_target = sum(time_delta[rowid > peak_speed_index],na.rm=T),
+#peak_speed_to_target_pct = (peak_speed_to_target / duration) * 100,
 
 ###
 # Remove trajectories - causes issues with joining.
@@ -141,7 +151,6 @@ Sa = Sa %>% filter(FeedbackJudge != "NoneNone") %>%  mutate(
   ControllerHoverTarget_ms = ControllerHoverTarget_ms * 1000,
   ControllerLeaveTarget_ms = ControllerLeaveTarget_ms * 1000,
   peak_speed_to_target_ms = (peak_speed_to_target * 1000) - ControllerHoverTarget_ms,
-  duration_ms = duration * 1000,
   PerformanceFeedback.f = factor(PerformanceFeedback,levels=feedback_order, ordered=T),
   JudgementType.f = factor(JudgementType,levels=judgement_order),
   )
@@ -153,7 +162,14 @@ Sa = Sa %>% filter(FeedbackJudge != "NoneNone") %>%  mutate(
 #                      peak_speed_to_target_pct,JudgementType,PerformanceFeedback)
 
 # Combine with Experiential Measures (Lf) and base pattern measures (Sd)
-Sa <- Sa %>% left_join(Sd, by=c("Participant" = "Participant", "FeedbackJudge" = "PatternSegmentLabel"))
+
+####
+# Merge Sd and Sa
+####
+Sa = Sa %>% left_join(Sd, by=c("Participant" = "Participant", "HitOrder"))
+Sa = Sa %>% rename("MoleIdStart" = "MoleIdStart.x", "MoleIdToHit" = "MoleIdToHit.x")
+
+#Sa <- Sa %>% left_join(Sd, by=c("Participant" = "Participant", "FeedbackJudge" = "PatternSegmentLabel"))
 Sa <- Sa %>% left_join(Lf)
 
 # Create variable to keep track of order
@@ -165,8 +181,19 @@ Sa <- Sa %>% group_by(Participant, FeedbackJudge) %>% mutate(
   PlayOrder = as.factor(PlayOrder)
 )
 
+# Create variable to keep track of judge order
+Sa <- Sa %>% group_by(Participant, JudgementType) %>% mutate(
+  Orderflag = row_number(),
+  Orderflag = ifelse(Orderflag < 2, Orderflag, 0)
+) %>% ungroup() %>% group_by(Participant) %>% mutate(
+  JudgeOrder = cumsum(Orderflag),
+  JudgeOrder = factor(PlayOrder, levels=c(1:9),ordered=T)
+)
+
 Sa = Sa %>% mutate(
-  JudgementOrder = str_remove(SessionProgram, "D3-3-2 Performance Feedback - ")
+  JudgementOrder = str_remove(SessionProgram, "D3-3-2 Performance Feedback - "),
+  fittsID.f = as.factor(fittsID),
+  Participant.f = as.factor(Participant),
 )
 
 
@@ -210,7 +237,7 @@ sum_cols_sa = c("travel", "duration","travel_head")
 
 # Sc: Summary of Condition
 Sc = Sa %>% group_by(Participant, FeedbackJudge) %>%
-  summarise(
+  dplyr::summarise(
     `Actions (n)` = max(HitOrder),
     `Actions Analyzed (n)` = length(HitOrder)-1,
     `Action Duration (sec)` = mean(duration),
@@ -222,9 +249,43 @@ Sc = Sa %>% group_by(Participant, FeedbackJudge) %>%
     `Time to Peak Speed (s)` = mean(time_to_peak_speed),
     `Peak Speed to Target (\\%)` = mean(peak_speed_to_target_pct),
     `Correspondence` = unique(AlgoCorrespondFastSlow.f),
-    MiniPatternLabel = unique(MiniPatternLabel),
-    `Performance Feedback` = PerformanceFeedback.f,
+     MiniPatternLabel = paste(unique(MiniPatternLabel),collapse=", "),
+    `Performance Feedback` = unique(PerformanceFeedback.f),
     `Performance Metric` = unique(JudgementType),
+    `Fitts ID` = mean(fittsID),
+  ) %>% mutate(
+    Participant = as.factor(Participant),
+    FeedbackJudge = as.factor(FeedbackJudge)
+  )
+
+# Scf: Summary of Condition-Feedback
+Scf = Sa %>% group_by(Participant, PerformanceFeedback.f) %>%
+  dplyr::summarise(
+    `Actions (n)` = max(HitOrder),
+    `Actions Analyzed (n)` = length(HitOrder)-1,
+    `Action Duration (sec)` = mean(duration),
+    `Action Arm Travel (meter)` = mean(travel_arm),
+    `Total Arm Travel (meter)` = sum(travel_arm),
+    `Euc. Arm Travel (meter)` = sum(travel_arm_euc),
+    `Straightness (0-1)` = mean(straightness),
+    `Peak Speed (m/s)` = mean(peak_speed),
+    `Time to Peak Speed (s)` = mean(time_to_peak_speed),
+    `Peak Speed to Target (\\%)` = mean(peak_speed_to_target_pct),
+    `Overall Feel` = unique(FeedbackOverallFeel.f),
+    `Distraction` = unique(FeedbackDistract.f),
+    `Quality` = unique(FeedbackQuality.f),
+    `Quantity` = unique(FeedbackQuantity.f),
+    `Sensing Algorithm` = unique(FeedbackSenseDiff.f),
+    `Assess Performance` = unique(FeedbackAssessPerf.f),
+    `Notice` = unique(FeedbackNotice.f),
+    `Distraction` = unique(FeedbackDistract.f),
+    `Encouragement` = unique(FeedbackEncourage.f),
+    MiniPatternLabel = paste(unique(MiniPatternLabel),collapse=", "),
+    `Performance Feedback` = unique(PerformanceFeedback.f),
+    `Performance Metric` = paste(unique(JudgementType),collapse=", "),
+  ) %>% mutate(
+    Participant = as.factor(Participant),
+    `Performance Feedback` = as.factor(`Performance Feedback`)
   )
 
 
@@ -256,6 +317,9 @@ Sf = Sa %>% group_by(Participant, FeedbackJudge) %>%
     `Peak Speed (m/s)` = mean(peak_speed),
     `Time to Peak Speed (s)` = mean(time_to_peak_speed),
     `Peak Speed to Target (\\%)` = mean(peak_speed_to_target_pct),
+    `Fitts ID` = mean(fittsID),
+    `Feedback` = unique(PerformanceFeedback),
+    `JudgementType` = unique(JudgementType),
   ) %>% filter(FeedbackJudge != "NoneNone")
 
 # Sp: Summary of Participant standard deviation
@@ -327,15 +391,299 @@ fig_c
 orca(fig_c, "fig/condition_feedbackDistract_violin.pdf", width=285, height=325)
 
 ###
+# Simple mode: Non-parametric tests for likert scale data
+###
+
+# Friedman test
+tables_friedman <- function(df, measlabel, treatlabel, plabel) {
+  dataset = data.frame(measurement = df[[measlabel]],
+                  treatment = df[[treatlabel]],
+                  participant = df[[plabel]])
+  
+result <- friedman.test(measurement ~ treatment | participant, data = dataset)
+dataset_measurement = dataset %>% group_by(treatment) %>% summarise(
+  `Mean Score` = mean(as.numeric(measurement)),
+  `SD` = sd(as.numeric(measurement))
+) %>% ungroup() %>% mutate(across(all_of(c("Mean Score", "SD")), ~ format(round(.x,2), nsmall = 2))) %>%
+  rename(Condition = treatment) %>% 
+  pivot_longer(cols=-c(Condition), names_to = "Variables") %>%
+  pivot_wider(names_from = Condition, values_from = value)
+
+s1 = paste(colnames(dataset_measurement), collapse=" & ")
+s2 = paste(dataset_measurement %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ ")
+
+dataset_measurement_stat <- data.frame(
+  `chisquared` =  result$statistic,
+  `df` = result$parameter,
+  p = result$p.value
+) %>% mutate(across(all_of(c("chisquared","df")), ~ format(round(.x,2), nsmall = 2))) %>%
+  mutate(`p-value` = format(round(p,3), nsmall = 3),
+         `p-value` = ifelse(`p-value` == "0.000", "$<$0.001", `p-value`),
+         `p-value` = ifelse(p < 0.05, paste0(`p-value`,"*"))) %>% select(-p)
+
+
+s3 = paste(colnames(dataset_measurement_stat), collapse=" & ")
+s4 = paste(dataset_measurement_stat %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ ")
+
+# Perform Conover's post-hoc test
+conover_result <- frdAllPairsConoverTest(y = dataset$measurement,
+                                         groups = dataset$treatment,
+                                         blocks = dataset$participant)
+
+#conover_summary = summary(conover_result)
+
+pvalues = as.data.frame(conover_result$p.value) %>%
+  mutate(across(everything(), ~ format(round(.x,3), nsmall = 3)),
+         across(everything(), ~ ifelse(as.numeric(.x) < 0.05, paste0('\\cellcolor{g2}',.x,"*"),.x)),
+         across(everything(), ~ ifelse(.x == "\\cellcolor{g2}0.000*", "\\cellcolor{g2}$<$0.001*", .x)),
+         across(everything(), ~ ifelse(is.na(.x), " ",.x))) %>% rownames_to_column()
+
+s5 = paste(colnames(pvalues), collapse=" & ")
+writeLines(paste(pvalues %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "), "table.txt")
+
+return(list(s1,s2,s3,s4,s5))
+}
+
+#condition-wise: correspondence
+tables_friedman(Sc, "Correspondence","FeedbackJudge","Participant")
+
+# feedback-wise: distract, ..
+tables_friedman(Scf, "Distraction","Performance Feedback","Participant")
+tables_friedman(Scf, "Encouragement","Performance Feedback","Participant")
+tables_friedman(Scf, "Sensing Algorithm","Performance Feedback","Participant")
+tables_friedman(Scf, "Assess Performance","Performance Feedback","Participant")
+tables_friedman(Scf, "Notice","Performance Feedback","Participant")
+tables_friedman(Scf, "Quality","Performance Feedback","Participant")
+tables_friedman(Scf, "Quantity","Performance Feedback","Participant")
+tables_friedman(Scf, "Overall Feel","Performance Feedback","Participant")
+
+# Todo: Test Overall Preference
+
+
+###
+# Simple mode: Repeated Measures Multivariate Anova
+###
+# The repeated-measures part does not refer to that we took multiple measures of actions, but instead to that
+# we measured participants multiple times throughout the experiment.
+# tables_rmanova is unaware of possible differences in FittsID between conditions and unaware of relationships
+# between the different dependent variables measured.
+# Simple Two-way ANOVA
+tables_rmanova <- function(df, plabel, measlabel,treatlabel1, treatlabel2) {
+  dataset = data.frame(measurement = df[[measlabel]],
+                       treat1 = df[[treatlabel1]],
+                       treat2 = df[[treatlabel2]],
+                       participant = df[[plabel]])
+  
+  aov_result <- aov_ez(id="participant", dv="measurement", dataset, within = c("treat1","treat2"))
+  aov_summary = summary(aov_result)
+  
+  aov_table = tibble(
+    colnames = names(aov_summary[[4]][1,]),
+    colvals = aov_summary[[4]][1,],
+    Variable = names(aov_summary[[4]][,1][1])
+  )
+  
+  aov_table = tibble(
+    colnames = names(aov_summary[[4]][2,]),
+    colvals = aov_summary[[4]][2,],
+    Variable = names(aov_summary[[4]][,1][2])
+  )  %>% bind_rows(aov_table)
+  
+  aov_table = tibble(
+    colnames = names(aov_summary[[4]][3,]),
+    colvals = aov_summary[[4]][3,],
+    Variable = names(aov_summary[[4]][,1][3])
+  )  %>% bind_rows(aov_table)
+  
+  aov_table = aov_table %>% mutate(
+    colnames = case_when(colnames == "Sum Sq" ~ "SS",
+                         colnames == "num Df" ~ "Df",
+                         colnames == "F value" ~ "F",
+                         colnames == "Pr(>F)" ~ "p")
+  ) %>% filter(!is.na(colnames))
+  
+  aov_table = aov_table %>% pivot_wider(names_from="colnames", values_from="colvals")
+  
+  aov_table = aov_table %>% mutate(across(all_of(c("SS","F")), ~ format(round(.x,2), nsmall = 2))) %>%
+    mutate(`p-value` = format(round(p,3), nsmall = 3),
+           `p-value` = ifelse(`p-value` == "0.000", "$<$0.001", `p-value`),
+           `p-value` = ifelse(p < 0.05, paste0(`p-value`,"*"),`p-value`)) %>% select(-p)
+  
+  s1 = paste(colnames(aov_table), collapse=" & ")
+  s2 = paste(aov_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\ ")
+  
+  # Obtain estimated marginal means
+  emm <- emmeans(aov_result, ~ treat1:treat2)
+  
+  # Perform pairwise comparisons with Bonferroni adjustment
+  pairwise_comparisons <- pairs(emm, adjust = "bonferroni")
+  pairwisedf = summary(pairwise_comparisons)
+  pairwisedf = pairwisedf %>% filter(p.value < 0.055)
+  
+  pairwisedf = pairwisedf %>% rename(Contrast = contrast, Estimate = estimate,
+                                     Df = df,`t Ratio` = t.ratio,p = p.value)
+  
+  pairwisedf = pairwisedf %>% mutate(across(all_of(c("Estimate","SE","t Ratio")), ~ format(round(.x,2), nsmall = 2))) %>%
+    mutate(`p-value` = format(round(p,3), nsmall = 3),
+           `p-value` = ifelse(`p-value` == "0.000", "$<$0.001", `p-value`),
+           `p-value` = ifelse(p < 0.05, paste0(`p-value`,"*"),`p-value`)) %>% select(-p)
+  
+  s3 = paste(colnames(pairwisedf), collapse=" & ")
+  writeLines(paste(pairwisedf %>% arrange(`p-value`) %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "), "table.txt")
+  return(list(s1,s2,s3))
+}
+
+aov_ez(id="Participant.f", dv="duration_ms", within = c("PerformanceFeedback","JudgementType"), data=Sa)
+
+tables_rmanova(Sa, "Participant.f", "duration_ms","PerformanceFeedback", "JudgementType") 
+tables_rmanova(Sa, "Participant.f", "travel_arm","PerformanceFeedback", "JudgementType") 
+tables_rmanova(Sa, "Participant.f", "peak_speed","PerformanceFeedback", "JudgementType") 
+tables_rmanova(Sa, "Participant.f", "peak_speed_to_target_pct","PerformanceFeedback", "JudgementType")
+tables_rmanova(Sa, "Participant.f", "time_to_peak_speed_ms","PerformanceFeedback", "JudgementType")
+tables_rmanova(Sa, "Participant.f", "straightness_pct","PerformanceFeedback", "JudgementType")
+tables_rmanova(Sa, "Participant.f", "fittsID","PerformanceFeedback", "JudgementType")
+
+
+
+fit <- multRM(cbind(travel_arm, duration_ms, peak_speed, peak_speed_to_target_pct, time_to_peak_speed_ms) ~ PerformanceFeedback.f * JudgementType.f *  order, data = Sa_test,
+              subject = "Participant.f", within = c("PerformanceFeedback.f","JudgementType.f","order"))
+summary(fit)
+
+
+
+Sa_test = Sa %>% group_by(Participant.f, PerformanceFeedback.f,JudgementType.f,fittsID.f) %>% 
+  summarise(across(all_of(c("travel_arm", "duration_ms", "peak_speed", "peak_speed_to_target_pct", "time_to_peak_speed_ms")), ~ mean(.x)))
+
+
+Sa_test = Sa %>% group_by(Participant.f, PerformanceFeedback.f,JudgementType.f) %>% dplyr::slice(1:min(19, n()))
+Sa_test = Sa_test %>% group_by(Participant.f, PerformanceFeedback.f,JudgementType.f) %>% mutate(order = 1, order = cumsum(order))
+
+fittsIDs = unique(round(Sa$fittsID,2))
+
+missingIDs = Sa %>% group_by(Participant.f, PerformanceFeedback.f,JudgementType.f) %>% 
+  summarise(n(), missingIDs = paste0(setdiff(fittsIDs, round(fittsID,2)))) %>% 
+  ungroup() %>% summarise(unique(missingIDs))
+
+Sa_test = Sa %>% filter(round(fittsID,2) %in% missingIDs)
+
+
+
+tables_rmanova(Sc,"Participant", "Action Arm Travel (meter)", "FeedbackJudge")
+
+tables_rmanova(Sc,"Participant", "Action Arm Travel (meter)", Sc, within = "FeedbackJudge")
+
+manova_result <- manova(cbind(travel_arm, duration_ms, peak_speed, peak_speed_to_target_pct, time_to_peak_speed_ms) ~ PerformanceFeedback.f + JudgementType.f + Error(PerformanceFeedback.f/JudgementType.f/fittsID), data = Sa %>% filter(fittsID.f != 0))
+summary(manova_result)
+
+Sa = Sa %>% filter(fittsID != 0)
+
+manova_result <- manova(cbind(`Action Arm Travel (meter)`, `Action Duration (sec)`, `Peak Speed (m/s)`) ~ 
+                          as.factor(Feedback) + as.factor(JudgementType) + 
+                          Error(as.factor(Feedback)/as.factor(JudgementType)/`Fitts ID`), 
+                        data = Sf %>% filter(`Fitts ID` != 0))
+
+anova_travel_arm <- aov(peak_speed ~ PerformanceFeedback.f + JudgementType.f + Error(PerformanceFeedback.f/JudgementType.f/fittsID), data = Sa %>% filter(fittsID.f != 0) %>% as.data.frame(.))
+
+posthoc_travel_arm <- emmeans(anova_travel_arm, ~ PerformanceFeedback.f + JudgementType.f)
+pairwise_travel_arm <- pairs(posthoc_travel_arm)
+
+pairwise_travel_arm <- pairs(posthoc_t)
+
+summary(anova_travel_arm)
+
+# Sa %>% select(travel_arm, duration_ms, peak_speed, peak_speed_to_target_pct, time_to_peak_speed_ms, PerformanceFeedback.f,fittsID,JudgementType) %>% view()
+
+independent_var <- Sa$FeedbackJudge.f
+
+manova_model <- manova(dependent_vars ~ PerformanceFeedback.f * JudgementType.f, data = Sa)
+summary(manova_model)
+
+
+
+manova_model <- lm(cbind(travel_arm, duration_ms, peak_speed, straightness_pct, peak_speed_to_target_pct, time_to_peak_speed_ms) ~ FeedbackJudge , data = Sa %>% filter(fittsID.f ))
+within <- data.frame(FeedbackJudge = Sa$FeedbackJudge)
+manova_result <- car::Anova(manova_model, idata = within, idesign = ~FeedbackJudge, type = "III")
+
+
+
+
+
+aov_result = summary(aov_result)[[4]]
+
+dataset_measurement = dataset %>% group_by(treatment) %>% summarise(
+  `Mean Score` = mean(as.numeric(measurement)),
+  `SD` = sd(as.numeric(measurement))
+) %>% ungroup() %>% mutate(across(all_of(c("Mean Score", "SD")), ~ format(round(.x,2), nsmall = 2))) %>%
+  rename(Condition = treatment) %>% 
+  pivot_longer(cols=-c(Condition), names_to = "Variables") %>%
+  pivot_wider(names_from = Condition, values_from = value)
+
+aov_result <- aov_ez("Participant", "Action Arm Travel (meter)", Sc, within = "FeedbackJudge")
+
+manova_result <- manova(cbind(DV1, DV2, DV3) ~ Time + Error(Participant/Time), data = data)
+
+
+# Perform pairwise comparisons with Bonferroni adjustment
+pairwise_comparisons <- pairs(emm, adjust = "bonferroni")
+pairwisedf = summary(pairwise_comparisons)
+writeLines(paste(pairwisedf %>% arrange(p.value) %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "), "table.txt")
+###
 # Linear Mixed Models (LMM): Check significant differences
 ###
 
 # Variables affecting our model: Pattern used (random), Participant (random), distance (for MT/speed/etc.), time (for travel_length)
 
-
+# OK, so after trying manova.. i believe linear mixed model is still the best tool we have available/ready at hand.
 
 # Null model: Expecting variance from participant and from pattern
-m.p = lmer(data=Sa, duration_ms ~ (1|Participant))
+m.p = lmer(data=Sa, duration_ms ~ (1|Participant.f))
+m.pf = lmer(data=Sa, duration_ms ~ fittsID + (1|Participant))
+(anova(m.p,m.pf))
+m.pff = lmer(data=Sa, duration_ms ~ fittsID + PerformanceFeedback.f + (1|Participant))
+(anova(m.pf,m.pff))
+m.pfo = lmer(data=Sa, duration_ms ~ fittsID + PlayOrder + (1|Participant))
+(anova(m.pf,m.pfo))
+(anova(m.pff,m.pfo))
+m.pfj = lmer(data=Sa, duration_ms ~ fittsID + JudgementType.f + (1|Participant))
+(anova(m.pf,m.pfj))
+m.pffj = lmer(data=Sa, duration_ms ~ fittsID + PerformanceFeedback.f + JudgementType.f + (1|Participant))
+(anova(m.pf,m.pffj))
+m.pffjo = lmer(data=Sa, duration_ms ~ fittsID + PerformanceFeedback.f + JudgementType.f + PlayOrder + (1|Participant))
+(anova(m.pffj,m.pffjo))
+summary(m.pffjo)
+m.pffj.summary <- summary(m.pffj)
+m.pffj.summary
+
+# todo include straightness
+#travel_arm, duration_ms, peak_speed, peak_speed_to_target_pct, time_to_peak_speed_ms, PerformanceFeedback.f,fittsID,JudgementType
+lmes = list(predictors = c("travel_arm", "duration_ms", "peak_speed","peak_speed_to_target","time_to_peak_speed_ms"),
+            random = c("Gender"),
+            fixed = c("fittsID.f","JudgementType.f", "PerformanceFeedback.f","PlayOrder"),
+            null = c("Participant.f"),
+            threshold = 0.05,
+            df = Sa)
+
+table = g_lme_table(lmes)
+
+
+lme_table <- table %>% filter(`$\\chi^2$` < 0.05) %>% 
+  mutate(`Random Intercept` = "Participant",
+         `$\\chi^2$` = format(round(`$\\chi^2$`,3), nsmall = 3),
+         `$\\chi^2$` = ifelse(`$\\chi^2$` == "0.000", "$<$0.001", `$\\chi^2$`),
+         across(everything(), ~ str_replace_all(.x, c("JudgementType.f" = "Performance Metric",
+                                                      "PerformanceFeedback" = "Performance Feedback",
+                                                      "travel_arm" = "Arm Travel",
+                                                      "duration_ms" = "Duration (ms)",
+                                                      "peak_speed_to_target" = "Peak Speed To Target",
+                                                      "time_to_peak_speed_ms" = "Time To Peak Speed (ms)",
+                                                      "peak_speed" = "Peak Speed (m/s)")))
+  ) %>% select(Predicted, `Random Intercept`, `Fixed Effect`, AIC, BIC, ML, `$\\chi^2$`, `$R^2_m$`,`$R^2_c$`)
+
+
+message(paste(colnames(lme_table), collapse=" & "))
+message(paste(lme_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "))
+
+
 m.pp = lmer(data=Sa, duration_ms ~ (1|Participant) + (1|MiniPatternLabel))
 (anova(m.p,m.pp))
 
@@ -484,7 +832,7 @@ plot_violin <- function(dataset, xlabel, ylabel,plabel, desc,xtitle,ytitle,miny,
                   y = as.numeric(dataset[[ylabel]]),
                   pid = dataset[[plabel]])
   
-  df = df %>% group_by(x,pid) %>% summarise(y = median(y))
+  df = df %>% group_by(x,pid) %>% summarise(y = mean(y))
   
   if (is.na(minx)) {
     minx = -0.45
@@ -545,6 +893,21 @@ for (i in 1:nrow(fig_plot)) {
                         jit = row$jitter)
   orca(figs[[i]], paste('fig/violin_error',row$annotation,row$y,'.pdf',sep="_"), width=row$width, height=row$height)
 }
+
+# Use a for loop to iterate over each row in the data frame
+for (i in 1:nrow(fig_plot)) {
+  row <- fig_plot[i, ]
+  figs[[i]] <- plot_bar(dataset = Sa %>% ungroup(), 
+                           xlabel = row$x, 
+                           ylabel = row$y, 
+                           desc = row$desc, 
+                           xtitle = row$xtitle, 
+                           ytitle = row$ytitle, 
+                           miny = row$miny, 
+                           maxy = row$maxy)
+  orca(figs[[i]], paste('fig/bar_error',row$annotation,row$y,'.pdf',sep="_"), width=row$width, height=row$height)
+}
+
 
 # Likert Plots
 fig_plot = read.csv("wam_plot_lf.csv", sep=";")
@@ -741,7 +1104,7 @@ fig_b %>% add_trace(data=speed_df,
           add_trace(data=speed_df, x=~c(first(time),last(time)),y=~c(mean(na.omit(mean_speed)),mean(na.omit(mean_speed))),type='scatter',mode='lines',
                     line = list(color = '#8d9096ff', width = 1,dash='dash',hoverinfo='none',hovertext=' ')) %>%
   add_trace(data=speed_df, x=~c(first(time),last(time)),y=~c(0,0),type='scatter',mode='lines',
-            line = list(color = '#8d9096ff', width = 1),hoverinfo='none',hovertext=' ') %>%
+            line = list(color = '#8d9096ff', width f= 1),hoverinfo='none',hovertext=' ') %>%
   layout(hoverlabel=list(bgcolor = '#eaeaeaff')) %>%
   add_annotations(ax=0,ay=-20,arrowhead=7,data=df,y=~peak_speed,x=~time_to_peak_speed_ms,text=~paste0('Peak Speed: ',round(peak_speed*100,2),'cm/s')) %>%
   add_annotations(ax=0,ay=-50,arrowhead=6,xanchor = "center",data=speed_df,y=~last(mean_speed),x=~last(time),text=~paste0('Action End: ',round(last(time),0),'ms                           ')) %>%

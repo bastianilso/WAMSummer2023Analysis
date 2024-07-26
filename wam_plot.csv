@@ -1,37 +1,38 @@
 dataset;x;y;desc;xtitle;ytitle;miny;maxy;annotation;width;height;bandwidth;jitter
 Sa;PerformanceFeedback.f;duration_ms;Movement Time (ms); ; ;1000;1600;feedback;265;265;80;2
 Sa;PerformanceFeedback.f;straightness;Straightness (0-1); ; ;0.73;0.97;feedback;265;265;0.05;0.02
-Sa;PerformanceFeedback.f;peak_speed;Peak Speed (m/s); ; ;0.5;2.5;feedback;265;265;0.125;0.05
+Sa;PerformanceFeedback.f;peak_speed;Peak Speed (m/s); ; ;0.5;2.5;feedback;265;265;125;0.05
 Sa;PerformanceFeedback.f;peak_speed_to_target_pct;% After Peak Speed; ; ;45;70;feedback;265;265;5;2
 Sa;PerformanceFeedback.f;time_to_peak_speed_ms;Time to Peak Speed; ; ;300;700;feedback;265;265;80;2
-Sa;PerformanceFeedback.f;travel_arm;Travel; ; ;0.1;0.4;feedback;265;265;0.125;0.02
+Sa;PerformanceFeedback.f;travel_arm;Travel; ; ;0.1;0.4;feedback;265;265;125;0.02
 Sa;JudgementType.f;duration_ms;Movement Time (ms); ; ;1000;1600;metric;265;265;80;2
 Sa;JudgementType.f;straightness;Straightness (0-1); ; ;0.75;1;metric;265;265;0.05;0.02
-Sa;JudgementType.f;peak_speed;Peak Speed (m/s); ; ;0.5;2.5;metric;265;265;0.125;0.05
+Sa;JudgementType.f;peak_speed;Peak Speed (m/s); ; ;0.5;2.5;metric;265;265;125;0.05
 Sa;JudgementType.f;peak_speed_to_target_pct;% After Peak Speed; ; ;45;70;metric;265;265;5;2
 Sa;JudgementType.f;time_to_peak_speed_ms;Time to Peak Speed; ; ;300;700;metric;265;265;80;2
-Sa;JudgementType.f;travel_arm;Travel; ; ;0.1;0.4;metric;265;265;0.125;0.02
+Sa;JudgementType.f;travel_arm;Travel; ; ;0.1;0.4;metric;265;265;125;0.02
 Sa;FeedbackJudge.fs;duration_ms;Movement Time per Task Condition;;Movement Time (ms);1000;1600;condition;425;425;80;2
 Sa;FeedbackJudge.fs;straightness;Straightness per Task Condition;;Straightness (0-1);0.75;1;condition;425;425;0.05;0.02
-Sa;FeedbackJudge.fs;peak_speed;Peak Speed per Task Condition;;Peak Speed (m/s);0.5;2.5;condition;425;425;0.125;0.05
+Sa;FeedbackJudge.fs;peak_speed;Peak Speed per Task Condition;;Peak Speed (m/s);0.5;2.5;condition;425;425;125;0.05
 Sa;FeedbackJudge.fs;peak_speed_to_target_pct;% After Peak Speed per Task Condition;;% After Peak Speed;45;70;condition;425;425;5;2
 Sa;FeedbackJudge.fs;time_to_peak_speed_ms;Time to Peak Speed per Task Condition;;Time to Peak Speed;300;700;condition;425;425;80;2
-Sa;FeedbackJudge.fs;travel_arm;Travel; ;Travel (m);0.1;0.4;condition;425;425;0.125;0.02
+Sa;FeedbackJudge.fs;travel_arm;Travel; ;Travel (m);0.1;0.4;condition;425;425;125;0.02
+Sa;FeedbackJudge.fs;fittsID;Mean Fitts ID; ;Fitts ID;-0.1;4;condition;425;425;125;0.02
 Sa;PlayOrder;duration_ms;Movement Time (ms);;;1000;1600;playorder;265;265;80;2
 Sa;PlayOrder;straightness;Straightness (0-1);;;0.75;1;playorder;265;265;0.05;0.02
-Sa;PlayOrder;peak_speed;Peak Speed (m/s);;;0.5;2.5;playorder;265;265;0.125;0.05
+Sa;PlayOrder;peak_speed;Peak Speed (m/s);;;0.5;2.5;playorder;265;265;125;0.05
 Sa;PlayOrder;peak_speed_to_target_pct;% After Peak Speed;;;45;70;playorder;265;265;5;2
 Sa;PlayOrder;time_to_peak_speed_ms;Time to Peak Speed;;;300;700;playorder;265;265;80;2
-Sa;PlayOrder;travel_arm;Travel;;;0.1;0.4;playorder;265;265;0.125;0.02
+Sa;PlayOrder;travel_arm;Travel;;;0.1;0.4;playorder;265;265;125;0.02
 Sa;MiniPatternLabel;duration_ms;Movement Time (ms) per Pattern;;;1000;1600;patternorder;265;265;80;2
 Sa;MiniPatternLabel;straightness;Straightness (0-1) per Pattern;;;0.75;1;patternorder;265;265;0.05;0.02
-Sa;MiniPatternLabel;peak_speed;Peak Speed (m/s) per Pattern;;;0.5;2.5;patternorder;265;265;0.125;0.05
+Sa;MiniPatternLabel;peak_speed;Peak Speed (m/s) per Pattern;;;0.5;2.5;patternorder;265;265;125;0.05
 Sa;MiniPatternLabel;peak_speed_to_target_pct;% After Peak Speed per Pattern;;;45;70;patternorder;265;265;5;2
 Sa;MiniPatternLabel;time_to_peak_speed_ms;Time to Peak Speed per Pattern;;;300;700;patternorder;265;265;80;2
-Sa;MiniPatternLabel;travel_arm;Travel per Pattern;;;0.1;0.4;patternorder;265;265;0.125;0.02
+Sa;MiniPatternLabel;travel_arm;Travel per Pattern;;;0.1;0.4;patternorder;265;265;125;0.02
 Sa;JudgementOrder;duration_ms;Movement Time (ms) by metric order;;;1000;1600;metricorder;265;265;80;2
 Sa;JudgementOrder;straightness;Straightness (0-1) by metric order;;;0.75;1;metricorder;265;265;0.05;0.02
-Sa;JudgementOrder;peak_speed;Peak Speed (m/s) by metric order;;;0.5;2.5;metricorder;265;265;0.125;0.05
+Sa;JudgementOrder;peak_speed;Peak Speed (m/s) by metric order;;;0.5;2.5;metricorder;265;265;125;0.05
 Sa;JudgementOrder;peak_speed_to_target_pct;% After Peak Speed by metric order;;;45;70;metricorder;265;265;5;2
 Sa;JudgementOrder;time_to_peak_speed_ms;Time to Peak Speed by metric order;;;300;700;metricorder;265;265;80;2
-Sa;JudgementOrder;travel_arm;Travel by metric order;;;0.1;0.4;metricorder;265;265;0.125;0.02
+Sa;JudgementOrder;travel_arm;Travel by metric order;;;0.1;0.4;metricorder;265;265;125;0.02

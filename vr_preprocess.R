@@ -165,7 +165,7 @@ for (folderpath in M$i) {
   #D = D %>% mutate(PatternSegmentLabel = ifelse(Event == "CountDown 3", "None", PatternSegmentLabel))
   # Ensure all cols has labels from JudgementType and PerformanceFeedback 
   # only do it downwards - warmup has no judgement/fb
-  label_cols = c("JudgementType", "PerformanceFeedback", "PatternSegmentLabel")
+  label_cols = c("JudgementType", "PerformanceFeedback", "PatternSegmentLabel","MoleSize")
   D = D %>% tidyr::fill(all_of(label_cols), .direction = c("down"))
   
   # Replace NA with None
@@ -213,58 +213,6 @@ for (folderpath in M$i) {
                                       from=c(first(WS$y0),last(WS$y1)), to=c(MS$y0,MS$y1))
     )
   
-  ####
-  # Verify pattern distances
-  ####
-  # grouped by patternsegmentlabel to exclude distances forming across breaks.
-  # todo: verify whether we also consider patternsegmentlabel (e.g. exclude breaks) when calculating action trajectories.
-  
-  # Note: Plotting of base pattern moved to plot_basepatterns.R
-  
-  # Import actual mini-patterns
-  patterns = read.csv("wam_pattern.csv", sep=";")
-  
-  D = D %>% left_join(patterns)
-  
-  Distances = D %>% filter(Event == "Mole Spawned") %>% select(Participant, MiniPatternLabel, SessionProgram,Framecount,MoleId, 
-                                                               MolePositionWorldX, MolePositionWorldY, PatternSegmentLabel,
-                                                               MolePositionMSX, MolePositionMSY) %>%
-    group_by(PatternSegmentLabel) %>%
-    mutate (NextMolePositionWorldX = lead(MolePositionWorldX),
-            NextMolePositionWorldY = lead(MolePositionWorldY),
-            NextMolePositionMSX = lead(MolePositionMSX),
-            NextMolePositionMSY = lead(MolePositionMSY),) %>%
-    filter(!is.na(NextMolePositionWorldX)) %>% rowwise() %>%
-    mutate(MolePositionWorld = list(data.frame('x'=c(MolePositionWorldX,NextMolePositionWorldX),
-                                               'y'=c(MolePositionWorldY,NextMolePositionWorldY))),
-           MolePositionMS = list(data.frame('x'=c(MolePositionMSX,NextMolePositionMSX),
-                                               'y'=c(MolePositionMSY,NextMolePositionMSY))),
-           dist_moleMS = st_length(st_linestring(data.matrix(data.frame(MolePositionMS)))),
-           dist_mole = st_length(st_linestring(data.matrix(data.frame(MolePositionWorld))))
-    ) 
-  save(Distances, file = 'plot_patterns.rda', compress=TRUE)
-  
-    Sdd = Distances %>% group_by(PatternSegmentLabel) %>% 
-    summarise(
-      distance = sum(dist_mole),
-      distanceMS = sum(dist_moleMS),
-      Participant = unique(Participant),
-      SessionProgram = unique(SessionProgram),
-      MiniPatternLabel = unique(MiniPatternLabel),
-      MoleId = paste(MoleId, collapse=" "),
-      dist_mole = paste(dist_mole, collapse=" ")
-    )
-  
-  #Sd %>% group_by(Participant,SessionProgram) %>% summarise(dist_prog = sum(distance)) %>% view()
-  #Sd %>% group_by(PatternSegmentLabel) %>% summarise(dist_prog = sum(distance), dist_prog_sd = sd(distance), dist_prog_mean = mean(distance)) %>% view() # check whether, after the shuffle, any segments had higher weight.
-  
-  if (!is.null(Sd)) {
-    Sd = Sd %>% bind_rows(Sdd)
-  } else {
-    Sd = Sdd
-  }
-  
-
   ####
   # HitOrder: Determine what constitutes each player action
   ####
@@ -315,8 +263,81 @@ for (folderpath in M$i) {
   # add timestamps for when hit started and ended
   D = D %>% group_by(HitOrder) %>% dplyr::mutate(
     HitStartTimestamp = first(Timestamp),
+    MoleIdStart = ifelse(Event == "Mole Spawned", MoleId,NA),
     HitEndTimestamp = last(Timestamp)
+  ) %>% tidyr::fill(MoleIdStart, .direction="downup")
+  
+  # We will just do it at the summary stage.
+  #D = D %>% ungroup() %>%
+  #  mutate(MoleIdToHit = ifelse(!is.na(HitOrder), MoleIdStart, NA)) %>%
+  #  tidyr::fill(MoleIdToHit, .direction="up") %>%
+  #  mutate(MoleIdToHit = lead(MoleIdToHit)) %>%
+  #  group_by(HitOrder) %>% 
+  #  mutate(MoleIdToHit = last(MoleIdToHit))
+  
+  #browser()
+  #D %>% filter(!is.na(HitOrder)) %>% select(Framecount,Timestamp, Event, HitOrder,ActionOrder, MoleOrder, MoleIdStart,MoleIdToHit) %>% view()
+  
+  ####
+  # Verify pattern distances
+  ####
+  # grouped by patternsegmentlabel to exclude distances forming across breaks.
+  # todo: verify whether we also consider patternsegmentlabel (e.g. exclude breaks) when calculating action trajectories.
+  
+  # Note: Plotting of base pattern moved to plot_basepatterns.R
+  
+  # Import actual mini-patterns
+  
+  patterns = read.csv("wam_pattern.csv", sep=";")
+  
+  D = D %>% left_join(patterns)
+  
+  Sdd = D %>% filter(Event == "Mole Spawned") %>% select(Participant, MiniPatternLabel, SessionProgram,Framecount,MoleId, 
+                                                               MolePositionWorldX, MolePositionWorldY, PatternSegmentLabel,
+                                                               MolePositionMSX, MolePositionMSY, MoleSize,HitOrder,MoleIdStart) %>%
+    #group_by(PatternSegmentLabel) %>%
+    ungroup() %>%
+    mutate (NextMolePositionWorldX = lead(MolePositionWorldX),
+            NextMolePositionWorldY = lead(MolePositionWorldY),
+            NextMolePositionMSX = lead(MolePositionMSX),
+            NextMolePositionMSY = lead(MolePositionMSY)) %>%
+    filter(!is.na(NextMolePositionWorldX)) %>% rowwise() %>%
+    mutate(MolePositionWorld = list(data.frame('x'=c(MolePositionWorldX,NextMolePositionWorldX),
+                                               'y'=c(MolePositionWorldY,NextMolePositionWorldY))),
+           MolePositionMS = list(data.frame('x'=c(MolePositionMSX,NextMolePositionMSX),
+                                            'y'=c(MolePositionMSY,NextMolePositionMSY))),
+           dist_moleMS = st_length(st_linestring(data.matrix(data.frame(MolePositionMS)))),
+           dist_mole = st_length(st_linestring(data.matrix(data.frame(MolePositionWorld)))),
+           fittsID = log2(dist_mole / MoleSize + 1),
+    ) 
+  
+  Sdd = Sdd %>% ungroup() %>% mutate(
+    MoleIdToHit = lead(MoleIdStart),
+    MoleCombo = paste(MoleIdStart,MoleIdToHit,sep="-"),
   )
+  #save(Sdd, file = 'plot_patterns.rda', compress=TRUE)
+  
+  #Sdd = Distances %>% group_by(PatternSegmentLabel) %>% 
+  #  summarise(
+  #    distance = sum(dist_mole),
+  #    MoleSize = unique(MoleSize),
+  #    distanceMS = sum(dist_moleMS),
+  #    Participant = unique(Participant),
+  #    SessionProgram = unique(SessionProgram),
+  #    MiniPatternLabel = unique(MiniPatternLabel),
+  #    MoleId = paste(MoleId, collapse=" "),
+  #    dist_mole = paste(dist_mole, collapse=" ")
+  #  )
+  
+  #Sd %>% group_by(Participant,SessionProgram) %>% summarise(dist_prog = sum(distance)) %>% view()
+  #Sd %>% group_by(PatternSegmentLabel) %>% summarise(dist_prog = sum(distance), dist_prog_sd = sd(distance), dist_prog_mean = mean(distance)) %>% view() # check whether, after the shuffle, any segments had higher weight.
+  
+  if (!is.null(Sd)) {
+    Sd = Sd %>% bind_rows(Sdd)
+  } else {
+    Sd = Sdd
+  }
+  
   
   ####
   # ControllerHover: Restore broken ControllerHover column and calcualate hover time and hover leaving time.
@@ -693,14 +714,14 @@ for (folderpath in M$i) {
       timestamp_rel = as.numeric(Timestamp - timestampi_min)
       # normalize coordinates and time 
     )
-
+  
   # Smooth the speed using a spline with degree 2 polynomial
   # TODO: calculate smooth speed using values normalized to 0-1
   # TODO: figure out how to set the right smoothing coefficient.
-  #Di = Di %>% group_by(Participant,HitOrder) %>% filter(!is.na(speed)) %>%
-  #  mutate(
-  #    speed_smooth = predict(loess(speed ~ timestamp_rel, data = ., degree = 2, span = 0.3), timestamp_rel)
-  #  ) %>% right_join(Di)
+  Di = Di %>% group_by(Participant,HitOrder) %>% filter(!is.na(speed)) %>%
+    mutate(
+      speed_smooth = predict(loess(speed ~ timestamp_rel, data = ., degree = 2, span = 0.3), timestamp_rel)
+    ) %>% right_join(Di)
 
   
   # Extract the smoothed speed values
@@ -817,9 +838,9 @@ for (folderpath in M$i) {
               peak_speed = max(speed,na.rm=T),
               peak_speed_index = first(rowid[speed==max(speed,na.rm=T)]), # first() takes care of NAs
               time_to_peak_speed = sum(time_delta[rowid < peak_speed_index],na.rm=T),
-              #peak_speed_smooth = max(speed_smooth,na.rm=T),
-              #peak_speed_smooth_index = first(rowid[speed_smooth==max(speed_smooth,na.rm=T)]), # first() takes care of NAs
-              #time_to_peak_speed_smooth = sum(time_delta[rowid < peak_speed_smooth_index],na.rm=T),
+              peak_speed_smooth = max(speed_smooth,na.rm=T),
+              peak_speed_smooth_index = first(rowid[speed_smooth==max(speed_smooth,na.rm=T)]), # first() takes care of NAs
+              time_to_peak_speed_smooth = sum(time_delta[rowid < peak_speed_smooth_index],na.rm=T),
               peak_speed_to_target = sum(time_delta[rowid > peak_speed_index],na.rm=T),
               peak_speed_to_target_pct = (peak_speed_to_target / duration) * 100,
               # Calculate straightness trajectory
@@ -848,7 +869,7 @@ for (folderpath in M$i) {
     W_height = abs(W_heightMin) + abs(W_heightMax),
   ) %>% bind_cols(S)
   
-  #browser()
+  
   S = D %>% ungroup() %>% filter(PlayPeriod == "Game", !is.na(HitOrder),!is.na(Event), Event != "Sample", LaserWithinWallBounds) %>% 
     group_by(Participant,HitOrder) %>%
     summarize(
@@ -860,9 +881,11 @@ for (folderpath in M$i) {
       travel_mole_euc = st_length(st_linestring(data.matrix(data.frame(MolePositionWorld_euc)))),
       ControllerLeaveTarget_ms = unique(na.omit(ControllerLeaveTarget_ms)),
       ControllerHoverTarget_ms = unique(na.omit(ControllerHoverTarget_ms)),
+      MoleIdStart = unique(MoleIdStart)
     ) %>% right_join(S)
   
   
+  S = S %>% ungroup() %>% mutate(MoleIdToHit = lead(MoleIdStart))
   
   # Save to Summary of Actions
   if (!is.null(Sa)) {
@@ -870,7 +893,7 @@ for (folderpath in M$i) {
   } else {
     Sa = S
   }
-  #browser()
+  
 }
 
 
