@@ -50,13 +50,18 @@ g_lme_table <- function(lmes) {
   }
   
   g_lme_add <- function(df, p, features, form_base, form_null, threshold, models, mode) {
+    if (length(features) == 0) {
+      return(models)
+    }
     
     if (mode == "random") {
       # 1) See how many random effects are needed
       new_models = g_lme_random(df, p, features, form_null)
     } else if (mode == "fixed") {
-      # 1) See how many random effects are needed
+      # 2) See how many fixed effects are needed
+      
       new_models = g_lme_fixed(df, p, features, form_null)
+      
     }
     new_models = new_models %>% mutate(p_pass = ifelse(`Pr(>Chisq)` < threshold, T,F),
                                        r2_pass = ifelse(p_pass & R2m == max(R2m), T, F))
@@ -104,11 +109,11 @@ g_lme_table <- function(lmes) {
   }
   
   g_lme_fixed <- function(df, p, fixed, form_null) {
-    
     f <- last(fixed)
     form_test = paste(f,"+",form_null)
     form_r = paste(p,"~", form_test)
     form_n = paste(p,"~", form_null)
+    #browser()
     m_f = lmer(form_r, data = df, REML=F)
     m_n = lmer(form_n, data = df, REML=F)
     a = anova(m_n, m_f) %>% bind_rows() %>% 

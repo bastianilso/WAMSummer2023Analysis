@@ -1,11 +1,14 @@
-name;color;dec;sd;perc
-Actions (n);T;F;F;F
-Actions Analyzed (n);T;F;F;F
-Action Duration (sec);T;T;T;F
-Action Arm Travel (meter);T;T;T;F
-Total Arm Travel (meter);T;T;F;F
-Euc. Arm Travel (meter);T;T;F;F
-Straightness (0-1);T;T;T;F
-Peak Speed (m/s);T;T;T;F
-Time to Peak Speed (s);T;T;T;F
-Peak Speed to Target (\%);T;F;T;T
+;name;color;dec;sd;perc;nodec
+;Actions (n);T;F;F;F;F
+;Actions Analyzed (n);T;F;F;F;F
+;Action Duration (ms);T;F;T;F;T
+;Action Arm Travel (meter);T;T;T;F;F
+;Total Arm Travel (meter);T;T;F;F;F
+;Euc. Arm Travel (meter);T;T;F;F;F
+;Straightness (0-1);T;T;T;F;F
+;Peak Speed (m/s);T;T;T;F;F
+;Time to Peak Speed (ms);T;F;T;F;T
+;Peak Speed to Target (\%);T;F;T;T;F
+;Fitts ID;T;T;T;F;F
+;Correspondence (1-7);T;T;T;F;F
+;Throughput (bits/s);T;T;T;F;F

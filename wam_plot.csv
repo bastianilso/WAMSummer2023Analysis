@@ -1,38 +1,55 @@
-dataset;x;y;desc;xtitle;ytitle;miny;maxy;annotation;width;height;bandwidth;jitter
-Sa;PerformanceFeedback.f;duration_ms;Movement Time (ms); ; ;1000;1600;feedback;265;265;80;2
-Sa;PerformanceFeedback.f;straightness;Straightness (0-1); ; ;0.73;0.97;feedback;265;265;0.05;0.02
-Sa;PerformanceFeedback.f;peak_speed;Peak Speed (m/s); ; ;0.5;2.5;feedback;265;265;125;0.05
-Sa;PerformanceFeedback.f;peak_speed_to_target_pct;% After Peak Speed; ; ;45;70;feedback;265;265;5;2
-Sa;PerformanceFeedback.f;time_to_peak_speed_ms;Time to Peak Speed; ; ;300;700;feedback;265;265;80;2
-Sa;PerformanceFeedback.f;travel_arm;Travel; ; ;0.1;0.4;feedback;265;265;125;0.02
-Sa;JudgementType.f;duration_ms;Movement Time (ms); ; ;1000;1600;metric;265;265;80;2
-Sa;JudgementType.f;straightness;Straightness (0-1); ; ;0.75;1;metric;265;265;0.05;0.02
-Sa;JudgementType.f;peak_speed;Peak Speed (m/s); ; ;0.5;2.5;metric;265;265;125;0.05
-Sa;JudgementType.f;peak_speed_to_target_pct;% After Peak Speed; ; ;45;70;metric;265;265;5;2
-Sa;JudgementType.f;time_to_peak_speed_ms;Time to Peak Speed; ; ;300;700;metric;265;265;80;2
-Sa;JudgementType.f;travel_arm;Travel; ; ;0.1;0.4;metric;265;265;125;0.02
-Sa;FeedbackJudge.fs;duration_ms;Movement Time per Task Condition;;Movement Time (ms);1000;1600;condition;425;425;80;2
-Sa;FeedbackJudge.fs;straightness;Straightness per Task Condition;;Straightness (0-1);0.75;1;condition;425;425;0.05;0.02
-Sa;FeedbackJudge.fs;peak_speed;Peak Speed per Task Condition;;Peak Speed (m/s);0.5;2.5;condition;425;425;125;0.05
-Sa;FeedbackJudge.fs;peak_speed_to_target_pct;% After Peak Speed per Task Condition;;% After Peak Speed;45;70;condition;425;425;5;2
-Sa;FeedbackJudge.fs;time_to_peak_speed_ms;Time to Peak Speed per Task Condition;;Time to Peak Speed;300;700;condition;425;425;80;2
-Sa;FeedbackJudge.fs;travel_arm;Travel; ;Travel (m);0.1;0.4;condition;425;425;125;0.02
-Sa;FeedbackJudge.fs;fittsID;Mean Fitts ID; ;Fitts ID;-0.1;4;condition;425;425;125;0.02
-Sa;PlayOrder;duration_ms;Movement Time (ms);;;1000;1600;playorder;265;265;80;2
-Sa;PlayOrder;straightness;Straightness (0-1);;;0.75;1;playorder;265;265;0.05;0.02
-Sa;PlayOrder;peak_speed;Peak Speed (m/s);;;0.5;2.5;playorder;265;265;125;0.05
-Sa;PlayOrder;peak_speed_to_target_pct;% After Peak Speed;;;45;70;playorder;265;265;5;2
-Sa;PlayOrder;time_to_peak_speed_ms;Time to Peak Speed;;;300;700;playorder;265;265;80;2
-Sa;PlayOrder;travel_arm;Travel;;;0.1;0.4;playorder;265;265;125;0.02
-Sa;MiniPatternLabel;duration_ms;Movement Time (ms) per Pattern;;;1000;1600;patternorder;265;265;80;2
-Sa;MiniPatternLabel;straightness;Straightness (0-1) per Pattern;;;0.75;1;patternorder;265;265;0.05;0.02
-Sa;MiniPatternLabel;peak_speed;Peak Speed (m/s) per Pattern;;;0.5;2.5;patternorder;265;265;125;0.05
-Sa;MiniPatternLabel;peak_speed_to_target_pct;% After Peak Speed per Pattern;;;45;70;patternorder;265;265;5;2
-Sa;MiniPatternLabel;time_to_peak_speed_ms;Time to Peak Speed per Pattern;;;300;700;patternorder;265;265;80;2
-Sa;MiniPatternLabel;travel_arm;Travel per Pattern;;;0.1;0.4;patternorder;265;265;125;0.02
-Sa;JudgementOrder;duration_ms;Movement Time (ms) by metric order;;;1000;1600;metricorder;265;265;80;2
-Sa;JudgementOrder;straightness;Straightness (0-1) by metric order;;;0.75;1;metricorder;265;265;0.05;0.02
-Sa;JudgementOrder;peak_speed;Peak Speed (m/s) by metric order;;;0.5;2.5;metricorder;265;265;125;0.05
-Sa;JudgementOrder;peak_speed_to_target_pct;% After Peak Speed by metric order;;;45;70;metricorder;265;265;5;2
-Sa;JudgementOrder;time_to_peak_speed_ms;Time to Peak Speed by metric order;;;300;700;metricorder;265;265;80;2
-Sa;JudgementOrder;travel_arm;Travel by metric order;;;0.1;0.4;metricorder;265;265;125;0.02
+dataset;x;y;desc;xtitle;ytitle;miny;maxy;annotation;width;height;bandwidth;jitter;overlay
+Sa;PerformanceFeedback.f;duration_ms;Movement Time (ms); ; ;1000;1600;feedback;265;265;80;2;bar_error_feedback_duration_ms_annotated.svg
+Sa;PerformanceFeedback.f;straightness;Straightness (0-1); ; ;0.73;0.97;feedback;265;265;0.05;0.02;bar_error_feedback_straightness_annotated.svg
+Sa;PerformanceFeedback.f;peak_speed_smooth;Peak Speed (m/s); ; ;0.5;1.5;feedback;265;265;125;0.05;bar_error_feedback_peak_speed_smooth_annotated.svg
+Sa;PerformanceFeedback.f;peak_speed_smooth_to_target_pct;% After Peak Speed; ; ;50;65;feedback;265;265;5;2;bar_error_feedback_peak_speed_smooth_to_target_pct_annotated.svg
+Sa;PerformanceFeedback.f;time_to_peak_speed_smooth_ms;Time to Peak Speed (s); ; ;450;650;feedback;265;265;80;2;bar_error_feedback_time_to_peak_speed_smooth_ms_annotated.svg
+Sa;PerformanceFeedback.f;travel_arm;Arm Travel (m); ; ;0.25;0.325;feedback;265;265;125;0.02;bar_error_feedback_travel_arm_annotated.svg
+Sa;PerformanceFeedback.f;throughput;Throughput (bits/s); ;;2;2.5;feedback;265;265;125;0.02;bar_error_feedback_throughput_annotated.svg
+Sa;PerformanceFeedback.f;fittsID;Fitts ID; ;;-0.1;4;feedback;265;265;125;0.02;
+Sa;PerformanceFeedback.f;AlgoCorrespondFastSlow.f;Correspondence (1-7); ;;2;7;feedback;265;265;125;0.02;bar_error_feedback_AlgoCorrespondFastSlow.f_annotated.svg
+Sa;JudgementType.f;duration_ms;Movement Time (ms); ; ;1000;1600;metric;265;265;80;2;bar_error_metric_duration_ms_annotated.svg
+Sa;JudgementType.f;straightness;Straightness (0-1); ; ;0.75;0.9;metric;265;265;0.05;0.02;bar_error_metric_straightness_annotated.svg
+Sa;JudgementType.f;peak_speed_smooth;Peak Speed (m/s); ; ;0.5;1.5;metric;265;265;125;0.05;bar_error_metric_peak_speed_smooth_annotated.svg
+Sa;JudgementType.f;peak_speed_smooth_to_target_pct;% After Peak Speed; ; ;50;65;metric;265;265;5;2;bar_error_metric_peak_speed_smooth_to_target_pct_annotated.svg
+Sa;JudgementType.f;time_to_peak_speed_smooth_ms;Time to Peak Speed (s); ; ;450;650;metric;265;265;80;2;bar_error_metric_time_to_peak_speed_smooth_ms_annotated.svg
+Sa;JudgementType.f;travel_arm;Arm Travel (m); ; ;0.25;0.325;metric;265;265;125;0.02;bar_error_metric_travel_arm_annotated.svg
+Sa;JudgementType.f;throughput;Throughput (bits/s); ;;2;2.5;metric;265;265;125;0.02;bar_error_metric_throughput_annotated.svg
+Sa;JudgementType.f;fittsID;Fitts ID; ;;-0.1;4;metric;265;265;125;0.02;
+Sa;JudgementType.f;AlgoCorrespondFastSlow.f;Correspondence (1-7); ;;2;7;metric;265;265;125;0.02;bar_error_metric_AlgoCorrespondFastSlow.f_annotated.svg
+Sa;FeedbackJudge.fs;duration_ms;Movement Time per Task Condition;;Movement Time (ms);1000;1600;condition;425;425;80;2;
+Sa;FeedbackJudge.fs;straightness;Straightness per Task Condition;;Straightness (0-1);0.75;0.9;condition;425;425;0.05;0.02;
+Sa;FeedbackJudge.fs;peak_speed_smooth;Peak Speed per Task Condition;;Peak Speed (m/s);0.5;1.5;condition;425;425;125;0.05;
+Sa;FeedbackJudge.fs;peak_speed_smooth_to_target_pct;% After Peak Speed per Task Condition;;% After Peak Speed;50;65;condition;425;425;5;2;
+Sa;FeedbackJudge.fs;time_to_peak_speed_smooth_ms;Time to Peak Speed (s) per Task Condition;;Time to Peak Speed;450;650;condition;425;425;80;2;
+Sa;FeedbackJudge.fs;travel_arm;Arm Travel (m); ;Travel (m);0.25;0.325;condition;425;425;125;0.02;
+Sa;FeedbackJudge.fs;fittsID;Fitts ID; ;Fitts ID;-0.1;4;condition;425;425;125;0.02;
+Sa;FeedbackJudge.fs;throughput;Throughput (bits/s); ;Throughput (bits/s);2;2.5;condition;425;425;125;0.02;
+Sa;FeedbackJudge.fs;AlgoCorrespondFastSlow.f;Correspondence (1-7); ;;2;7;condition;425;425;125;0.02;
+Sa;PlayOrder;duration_ms;Movement Time (ms);;;1000;1600;playorder;265;265;80;2;
+Sa;PlayOrder;straightness;Straightness (0-1);;;0.75;0.9;playorder;265;265;0.05;0.02;
+Sa;PlayOrder;peak_speed_smooth;Peak Speed (m/s);;;0.5;1.5;playorder;265;265;125;0.05;
+Sa;PlayOrder;peak_speed_smooth_to_target_pct;% After Peak Speed;;;50;65;playorder;265;265;5;2;
+Sa;PlayOrder;time_to_peak_speed_smooth_ms;Time to Peak Speed (s);;;450;650;playorder;265;265;80;2;
+Sa;PlayOrder;travel_arm;Arm Travel (m);;;0.25;0.325;playorder;265;265;125;0.02;
+Sa;PlayOrder;throughput;Throughput (bits/s); ;Throughput (bits/s);2;2.5;playorder;265;265;125;0.02;
+Sa;PlayOrder;fittsID;Fitts ID; ;Fitts ID;-0.1;4;playorder;265;265;125;0.02;
+Sa;PlayOrder;AlgoCorrespondFastSlow.f;Correspondence (1-7); ;;2;7;playorder;265;265;125;0.02;
+Sa;MiniPatternLabel;duration_ms;Movement Time (ms) per Pattern;;;1000;1600;patternorder;265;265;80;2;
+Sa;MiniPatternLabel;straightness;Straightness (0-1) per Pattern;;;0.75;0.9;patternorder;265;265;0.05;0.02;
+Sa;MiniPatternLabel;peak_speed_smooth;Peak Speed (m/s) per Pattern;;;0.5;1.5;patternorder;265;265;125;0.05;
+Sa;MiniPatternLabel;peak_speed_smooth_to_target_pct;% After Peak Speed per Pattern;;;50;65;patternorder;265;265;5;2;
+Sa;MiniPatternLabel;time_to_peak_speed_smooth_ms;Time to Peak Speed (s) per Pattern;;;450;650;patternorder;265;265;80;2;
+Sa;MiniPatternLabel;travel_arm;Arm Travel (m) per Pattern;;;0.25;0.325;patternorder;265;265;125;0.02;
+Sa;MiniPatternLabel;throughput;Throughput (bits/s); ;Throughput (bits/s);2;2.5;patternorder;265;265;125;0.02;
+Sa;MiniPatternLabel;fittsID;Fitts ID; ;Fitts ID;-0.1;4;patternorder;265;265;125;0.02;
+Sa;MiniPatternLabel;AlgoCorrespondFastSlow.f;Correspondence (1-7); ;;2;7;patternorder;265;265;125;0.02;
+Sa;JudgementOrder;duration_ms;Movement Time (ms) by metric order;;;1000;1600;metricorder;265;265;80;2;
+Sa;JudgementOrder;straightness;Straightness (0-1) by metric order;;;0.75;0.9;metricorder;265;265;0.05;0.02;
+Sa;JudgementOrder;peak_speed_smooth;Peak Speed (m/s) by metric order;;;0.5;1.5;metricorder;265;265;125;0.05;
+Sa;JudgementOrder;peak_speed_smooth_to_target_pct;% After Peak Speed by metric order;;;50;65;metricorder;265;265;5;2;
+Sa;JudgementOrder;time_to_peak_speed_smooth_ms;Time to Peak Speed (s) by metric order;;;450;650;metricorder;265;265;80;2;
+Sa;JudgementOrder;travel_arm;Arm Travel (m) by metric order;;;0.25;0.325;metricorder;265;265;125;0.02;
+Sa;JudgementOrder;throughput;Throughput (bits/s); ;Throughput (bits/s);2;2.5;metricorder;265;265;125;0.02;
+Sa;JudgementOrder;fittsID;Fitts ID; ;Fitts ID;-0.1;4;metricorder;265;265;125;0.02;
+Sa;JudgementOrder;AlgoCorrespondFastSlow.f;Correspondence (1-7); ;;2;7;metricorder;265;265;125;0.02;

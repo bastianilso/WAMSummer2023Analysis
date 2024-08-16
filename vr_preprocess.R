@@ -2,6 +2,7 @@ library(tidyverse)
 library(plotly)
 library(sf)
 library(gsheet)
+library(interp)
 source("utils/loadrawdata.R")
 options("digits.secs"=6)
 
@@ -122,7 +123,7 @@ for (folderpath in M$i) {
            PlayPeriod = ifelse(indication < 1, "PreGame", "Game"),
            PlayPeriod = ifelse(indication > 1, "PostGame", PlayPeriod),
            indication = NULL)
-  
+  browser()
   # Fill MoleSpawnOrder and PointerShootOrder during the PlayPeriod.
   # ShootOrder reports number until
   #MoleOrder = ifelse(Event == "Mole Spawned", 1,0),
@@ -715,15 +716,49 @@ for (folderpath in M$i) {
       # normalize coordinates and time 
     )
   
+  # Create a normalized speed, we can use while predicting.
+  Di = Di %>% group_by(Participant,HitOrder) %>% filter(!is.na(speed), !is.na(timestamp_rel)) %>%
+    mutate(
+      speed_norm = scales::rescale(speed, from=c(min(speed),max(speed)), to=c(0,1)),
+      timestamp_rel_norm = scales::rescale(timestamp_rel, from=c(min(timestamp_rel),max(timestamp_rel)), to=c(0,1))
+    ) %>% ungroup() %>% tibble::rownames_to_column("rowindex")
+  
+  #browser()
   # Smooth the speed using a spline with degree 2 polynomial
   # TODO: calculate smooth speed using values normalized to 0-1
   # TODO: figure out how to set the right smoothing coefficient.
-  Di = Di %>% group_by(Participant,HitOrder) %>% filter(!is.na(speed)) %>%
-    mutate(
-      speed_smooth = predict(loess(speed ~ timestamp_rel, data = ., degree = 2, span = 0.3), timestamp_rel)
-    ) %>% right_join(Di)
+  # TODO: Fit portions of the gesture, specifically the first 
+  #Di = Di %>% group_by(Participant,HitOrder) %>% filter(!is.na(speed)) %>%
+  #  mutate(
+  #    speed_smooth = predict(lm(speed_norm ~ poly(timestamp_rel_norm, 2, raw=T)))
+      #speed_smooth = predict(loess(speed_norm ~ timestamp_rel, data = ., degree = 2, span = 0.3), timestamp_rel)
+  #  ) %>% right_join(Di)
 
+  #for some reason calling predict() inside a mutate doesnt really work..
   
+  predictions = lapply(split(Di, list(Di$Participant, Di$HitOrder)), function(df) {
+    # Apply LOESS smoothing
+    # It's not clear from Ruiz et al if they applied a specific kernel, so we use the default Tricubic kernel.
+    
+    #df$speed_smooth <- predict(loess(speed_norm ~ timestamp_rel_norm, data = df, degree = 2, span = 0.05, control=loess.control(cell=0.9)), df$timestamp_rel_norm)
+    df$speed_smooth_norm <- predict(locfit::locfit(df$speed_norm ~ df$timestamp_rel_norm, family = "gaussian", deg = 2, alpha = 0.2, kern = "rectangular"), df$timestamp_rel_norm)
+    #df$speed_smooth <- predict(lm(speed_norm ~ poly(timestamp_rel_norm, 2, raw = TRUE), data = df))
+    #df$speed_smooth <- interp::locpoly(x = df$timestamp_rel_norm, y = df$speed_norm, output="points", h=0.05, kernel = "uniform", degree=2)
+    
+    df = df %>% select(Participant, HitOrder, speed_smooth_norm, timestamp_rel_norm, rowindex)
+    return(df)
+  })
+  
+  preds <- do.call(rbind, predictions)
+  Di = Di %>% left_join(preds)
+
+  # Bring smoothed speed out of normalized space and back into unit space.
+  Di = Di %>% group_by(Participant,HitOrder) %>%
+    mutate(
+      speed_smooth = scales::rescale(speed_smooth_norm, from=c(min(speed_norm),max(speed_norm)), to=c(min(speed),max(speed))),
+    ) %>% ungroup()
+  
+    
   # Extract the smoothed speed values
   #interp_data$smoothed_speed <- predict(smooth_speed, interp_data$timestamp)$y
   
@@ -731,14 +766,21 @@ for (folderpath in M$i) {
     browser()
     D %>% filter(HitOrder == 2) %>% select(Framecount,Timestamp, Event, HitOrder,ActionOrder, MoleOrder, HitStartTimestamp,HitEndTimestamp,MoleId,RightControllerLaserPosWorldX,RightControllerLaserPosWorldY) %>% view()
 
-   fig %>% add_trace(name="raw",data = Di, type='scatter',mode='markers', 
-                              x=~timestamp_rel, y=~speed) %>%
-      add_trace(name="interpolated",data = Di, type='scatter',mode='markers', 
-                x=~timestamp_rel, y=~speed_smooth) %>%
+    
+    fig %>% add_trace(name="raw",data = preds %>% filter(HitOrder == 20), type='scattergl',mode='markers', 
+                      x=~timestamp_rel_norm, y=~speed_smooth) %>%
+      layout(title=list(font=list(size=15), xanchor="center", xref="paper"),
+             xaxis=list( zeroline=F, tickfont=list(size=15)),
+             yaxis=list( zeroline=F, tickfont=list(size=15), showticklabels=T))    
+    
+   fig %>% add_trace(name="raw",data = Di %>% filter(HitOrder == 10), type='scattergl',mode='markers', 
+                              x=~timestamp_rel_norm, y=~speed) %>%
+      add_trace(name="interpolated",data = Di %>% filter(HitOrder == 10), type='scattergl',mode='lines', 
+                x=~timestamp_rel_norm, y=~speed_smooth) %>%
       layout(title=list(font=list(size=15), xanchor="center", xref="paper",
                         text=~movement_time),
-             xaxis=list(range=c(0.2,0.6), zeroline=F, tickfont=list(size=15)),
-             yaxis=list(range=c(0.8,1.2), zeroline=F, tickfont=list(size=15), showticklabels=T))
+             xaxis=list( zeroline=F, tickfont=list(size=15)),
+             yaxis=list( zeroline=F, tickfont=list(size=15), showticklabels=T))
     
     # visualize speed and speed_smoothed
     fig_c = fig %>% add_trace(name="real",data = Di %>% filter(Participant==9, HitOrder %in% c(100)), type='scatter',mode='markers', 
@@ -835,14 +877,18 @@ for (folderpath in M$i) {
               duration = sum(time_delta, na.rm=T),
               speed_data = list(data.frame('x'=speed,
                                       't'=Timestamp)),
+              speed_smooth_data = list(data.frame('x'=speed_smooth,
+                                           't'=Timestamp)),
               peak_speed = max(speed,na.rm=T),
               peak_speed_index = first(rowid[speed==max(speed,na.rm=T)]), # first() takes care of NAs
               time_to_peak_speed = sum(time_delta[rowid < peak_speed_index],na.rm=T),
               peak_speed_smooth = max(speed_smooth,na.rm=T),
               peak_speed_smooth_index = first(rowid[speed_smooth==max(speed_smooth,na.rm=T)]), # first() takes care of NAs
-              time_to_peak_speed_smooth = sum(time_delta[rowid < peak_speed_smooth_index],na.rm=T),
+              time_to_peak_speed_smooth = sum(time_delta[rowid < peak_speed_index],na.rm=T),
               peak_speed_to_target = sum(time_delta[rowid > peak_speed_index],na.rm=T),
               peak_speed_to_target_pct = (peak_speed_to_target / duration) * 100,
+              peak_speed_smooth_to_target = sum(time_delta[rowid > peak_speed_smooth_index],na.rm=T),
+              peak_speed_smooth_to_target_pct = (peak_speed_smooth_to_target / duration) * 100,
               # Calculate straightness trajectory
               # 
               )
@@ -1005,7 +1051,7 @@ Lf = Lf %>% mutate(PerformanceFeedback = Condition,
 # Filling
 
 # columns which need filling:
-fill_per_participant = c('VRExperience','GameExperience','OverallExperience.f','PredictedPattern','Age','Gender','Glasses')
+fill_per_participant = c('VRExperience', 'VRSickness','GameExperience','OverallExperience.f','PredictedPattern','Age','Gender','Glasses','PlayedBefore', 'PreferedFeedback')
 fill_per_feedback = c('FeedbackSenseDiff.f','FeedbackDistract.f','FeedbackAssessPerf.f','FeedbackEncourage.f','FeedbackNotice.f','FeedbackOverallFeel.f','FeedbackQuality.f','FeedbackQuantity.f')
 
 Lf = Lf %>% group_by(Participant) %>% 
