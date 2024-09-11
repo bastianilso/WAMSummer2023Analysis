@@ -308,9 +308,10 @@ Sc = Sa %>% group_by(Participant, FeedbackJudge.f) %>%
      MiniPatternLabel = paste(unique(MiniPatternLabel),collapse=", "),
     `Performance Feedback` = unique(PerformanceFeedback.f),
     `Performance Metric` = unique(JudgementType),
+    `Throughput (bits/s)` = mean(throughput),
     `Fitts ID` = mean(fittsID),
   ) %>% mutate(
-    Participant = as.factor(Participant),
+    Participant.f = as.factor(Participant),
   )
 
 # Scf: Summary of Condition-Feedback
@@ -450,6 +451,22 @@ Spl = Sa %>% group_by(Participant,PlayOrderFB) %>%
 #  summarise(across(any_of(matches("^(?!PlayOrder$).*",perl=T)), ~ predict(lm(.x ~ PlayOrder, data=Spl)))) %>%
 #  rename_with(~ paste0(.x,"_reg"), matches("^(?!PlayOrder$).*",perl=T)) %>%
 #  rename("Participant" = "Participant_reg")
+
+###
+# Reporting various means in Results
+###
+
+# Who had the lowest throughput of all conditions?
+
+Sa %>% group_by(FeedbackJudge.f) %>% summarise(
+  throughput_mean = mean(throughput),
+  throughput_sd = sd(throughput)
+)
+
+# Who received lowest correspondence ratings?
+Sa %>% group_by(JudgementType.f) %>% summarise(
+  correspondence = mean(as.numeric(AlgoCorrespondFastSlow.f))
+)
 
 ###
 # Bartlett's Spherity test
@@ -608,7 +625,7 @@ tables_friedman(Scf, "Overall Feel","Performance Feedback","Participant")
 # tables_rmanova is unaware of possible differences in FittsID between conditions and unaware of relationships
 # between the different dependent variables measured.
 # Simple Two-way ANOVA
-tables_rmanova <- function(df, plabel, measlabel,treatlabel1, treatlabel2, control1, control2, ) {
+tables_rmanova <- function(df, plabel, measlabel,treatlabel1, treatlabel2, control1, control2) {
   dataset = data.frame(measurement = df[[measlabel]],
                        treat1 = df[[treatlabel1]],
                        treat2 = df[[treatlabel2]],
@@ -686,7 +703,7 @@ tables_rmanova(Sa, "Participant.f", "throughput","PerformanceFeedback", "Judgeme
 
 
 tables_rmanova_single <- function(df, plabel, measlabel,treatlabel1) {
-  browser()
+  #browser()
   dataset = data.frame(measurement = df[[measlabel]],
                        treat1 = df[[treatlabel1]],
                        participant = df[[plabel]])
@@ -767,6 +784,8 @@ tables_rmanova_single(Scf, "Participant.f", "Time to Peak Speed (ms)","Performan
 tables_rmanova_single(Scf, "Participant.f", "Straightness (0-1)","PerformanceFeedback.f")
 tables_rmanova_single(Scf, "Participant.f", "Throughput (bits/s)","PerformanceFeedback.f")
 tables_rmanova_single(Scf, "Participant.f", "Correspondence","PerformanceFeedback.f")
+
+tables_rmanova_single(Sc, "Participant.f", "Throughput (bits/s)","FeedbackJudge.f")
 
 fit <- multRM(cbind(travel_arm, duration_ms, peak_speed_smooth, peak_speed_smooth_to_target_pct, time_to_peak_speed_smooth_ms) ~ PerformanceFeedback.f * JudgementType.f *  order, data = Sa_test,
               subject = "Participant.f", within = c("PerformanceFeedback.f","JudgementType.f","order"))
