@@ -362,10 +362,12 @@ Scm = Sa %>% group_by(Participant, JudgementType.f) %>%
     `Correspondence` = mean(as.numeric(AlgoCorrespondFastSlow.f)),
     `Performance Metric` = paste(unique(JudgementType),collapse=", "),
     `Throughput (bits/s)` = mean(throughput),
+    JudgementOrder = paste(unique(str_remove(SessionProgram, "D3-3-2 Performance Feedback - "))),
   ) %>% mutate(
     Participant.f = as.factor(Participant),
-    `Performance Metric` = as.factor(`Performance Metric`)
-  )
+    `Performance Metric` = as.factor(`Performance Metric`),
+    JudgementOrder = as.numeric(as.factor(JudgementOrder)),
+  ) 
 
 
 # Sp: Summary of Participants
@@ -435,17 +437,19 @@ Sp_sd = Sa %>% group_by(Participant) %>%
   )
 
 #Spl: Summary of Playorder
-Spl = Sa %>% group_by(Participant,PlayOrderFB) %>% 
+Spl = Sa %>% group_by(Participant,PlayOrder) %>% 
   summarise(`Throughput` = mean(throughput),
             `Action Duration (ms)` = mean(duration_ms),
             `Action Arm Travel (meter)` = mean(travel_arm),
             `Straightness (0-1)` = mean(straightness),
             `Peak Speed (m/s)` = mean(peak_speed_smooth),
             `Time to Peak Speed (ms)` = mean(time_to_peak_speed_smooth_ms),
-            `Peak Speed to Target (\\%)` = mean(peak_speed_smooth_to_target_pct),
-            PlayOrder = as.numeric(unique(PlayOrder))) %>% ungroup() %>%
-  group_by(Participant) %>%
-  mutate(across(any_of(matches("^(?!PlayOrder$).*",perl=T)), ~ .x-.x[PlayOrder==1]))
+            `Peak Speed to Target (\\%)` = mean(peak_speed_smooth_to_target_pct))
+
+# ,
+#PlayOrder = as.numeric(unique(PlayOrder))) %>% ungroup() %>%
+#  group_by(Participant) %>%
+#  mutate(across(any_of(matches("^(?!PlayOrder$).*",perl=T)), ~ .x-.x[PlayOrder==1]))
 
 #Spl %>% group_by(Participant) %>%
 #  summarise(across(any_of(matches("^(?!PlayOrder$).*",perl=T)), ~ predict(lm(.x ~ PlayOrder, data=Spl)))) %>%
@@ -556,7 +560,6 @@ tables_friedman <- function(df, measlabel, treatlabel, plabel) {
   dataset = data.frame(measurement = df[[measlabel]],
                   treatment = df[[treatlabel]],
                   participant = df[[plabel]])
-  
 result <- friedman.test(measurement ~ treatment | participant, data = dataset)
 dataset_measurement = dataset %>% group_by(treatment) %>% summarise(
   `Mean Score` = mean(as.numeric(measurement)),
@@ -582,6 +585,10 @@ dataset_measurement_stat <- data.frame(
 s3 = paste(colnames(dataset_measurement_stat), collapse=" & ")
 s4 = paste(dataset_measurement_stat %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ ")
 
+# re-arrange distance variable so conover's F shows the right p-values for reporting.
+#dataset = dataset %>% mutate(across(everything(), ~ str_replace_all(.x, c("Action" = "UAction", "Operation" = "WOperation")))) %>%
+  #arrange(participant, treatment)
+
 # Perform Conover's post-hoc test
 conover_result <- frdAllPairsConoverTest(y = dataset$measurement,
                                          groups = dataset$treatment,
@@ -603,6 +610,8 @@ return(list(result, conover_result, s1,s2,s3,s4,s5))
 
 #condition-wise: correspondence
 tables_friedman(Sc, "Correspondence","FeedbackJudge.f","Participant")
+tables_friedman(Scm %>% arrange(Participant, desc(JudgementType.f)), "Correspondence","Performance Metric","Participant")
+tables_friedman(Scm, "JudgementOrder","Performance Metric","Participant")
 
 # feedback-wise: distract, ..
 tables_friedman(Scf, "Distraction","Performance Feedback","Participant")
@@ -626,13 +635,15 @@ tables_friedman(Scf, "Overall Feel","Performance Feedback","Participant")
 # between the different dependent variables measured.
 # Simple Two-way ANOVA
 tables_rmanova <- function(df, plabel, measlabel,treatlabel1, treatlabel2, control1, control2) {
+  #browser()
   dataset = data.frame(measurement = df[[measlabel]],
                        treat1 = df[[treatlabel1]],
                        treat2 = df[[treatlabel2]],
                        participant = df[[plabel]])
   
   aov_result <- aov_ez(id="participant", dv="measurement", dataset, within = c("treat1","treat2"))
-  aov_summary = summary(aov_result)
+  aov_summary = summary(aov_result, effect_size ="partial")
+  
   
   aov_table = tibble(
     colnames = names(aov_summary[[4]][1,]),
@@ -703,7 +714,7 @@ tables_rmanova(Sa, "Participant.f", "throughput","PerformanceFeedback", "Judgeme
 
 
 tables_rmanova_single <- function(df, plabel, measlabel,treatlabel1) {
-  #browser()
+  browser()
   dataset = data.frame(measurement = df[[measlabel]],
                        treat1 = df[[treatlabel1]],
                        participant = df[[plabel]])
@@ -1146,16 +1157,19 @@ fig %>% add_trace(data=Sa, x=~Participant, y=~, type='box')
 fig %>% add_trace(data=Sa, x=~Participant,color=~PerformanceFeedback,y=~peak_speed_smooth, type='box', color=I("rgba(50, 50, 50, 1)"))
 
 
-plot_bar <- function(dataset, xlabel, ylabel, desc,xtitle,ytitle,miny,maxy,overlay) {
+plot_bar <- function(dataset, xlabel, ylabel, desc,xtitle,ytitle,miny,maxy,lwidth,overlay = "") {
   #browser()
   df = data.frame(x = dataset[[xlabel]],
-                  y = as.numeric(dataset[[ylabel]]))
+                  y = as.numeric(dataset[[ylabel]]),
+                  p = dataset$Participant)
 
   # Simple SD
   #df = df %>% group_by(x) %>% summarise(mean = mean(y), sd=sd(y))
   
   # 95% Confidence intervals
   df = df %>%
+    group_by(p,x) %>%
+    summarise(y = mean(y)) %>%
     group_by(x) %>%
     summarise(mean.y = mean(y, na.rm = TRUE),
               sd.y = sd(y, na.rm = TRUE),
@@ -1164,14 +1178,14 @@ plot_bar <- function(dataset, xlabel, ylabel, desc,xtitle,ytitle,miny,maxy,overl
            lower.ci.y = mean.y - qt(1 - (0.05 / 2), n.y - 1) * se.y,
            upper.ci.y = mean.y + qt(1 - (0.05 / 2), n.y - 1) * se.y)
   
-  fig_c <- fig %>%
+  fig_c = fig %>%
     add_trace(data=df,
-              x=~x, y=~mean.y, color=I('darkgrey'),
+              x=~x, y=~mean.y, color=I("grey"), #barmode='group', colors = c("lightgrey", "darkgrey", "grey"),
               error_y=~list(symmetric=FALSE, array=upper.ci.y - mean.y, arrayminus=mean.y-lower.ci.y, color = '#000000'), type='bar') %>%
     layout(margin=list(l=55,r=0,t=55,b=0),title=list(font=list(size=15), xanchor="center", xref="paper",
                                                      text=desc), showlegend=F,
-           xaxis=list(range=c(-0.45,~length(unique(x)) - 0.45), title=xtitle, zeroline=F, tickfont=list(size=15)),
-           yaxis=list(range=c(miny,maxy), title=ytitle, zeroline=F, tickfont=list(size=15), showticklabels=T))
+           xaxis=list(linewidth=lwidth, range=c(-0.45,~length(unique(x)) - 0.45), title=xtitle, zeroline=F, tickfont=list(size=15)),
+           yaxis=list(linewidth=lwidth, range=c(miny,maxy), title=ytitle, zeroline=F, tickfont=list(size=15), showticklabels=T))
   
   if (overlay != "") {
     svg_file_path = paste0('fig/',overlay)
@@ -1194,7 +1208,7 @@ plot_bar <- function(dataset, xlabel, ylabel, desc,xtitle,ytitle,miny,maxy,overl
   return(fig_c)
 }
 
-plot_violin <- function(dataset, xlabel, ylabel,plabel, desc,xtitle,ytitle,miny,maxy,minx = NA,maxx = NA,bwidth,jit,overlay) {
+plot_violin <- function(dataset, xlabel, ylabel,plabel, desc,xtitle,ytitle,miny,maxy,minx = NA,maxx = NA,bwidth,jit,overlay = "") {
   #browser()
   df = data.frame(x = dataset[[xlabel]],
                   y = as.numeric(dataset[[ylabel]]),
@@ -1214,6 +1228,8 @@ plot_violin <- function(dataset, xlabel, ylabel,plabel, desc,xtitle,ytitle,miny,
   # they need to be independent and are supposed to show where future participants
   # performance are expected to be.
   dfe = df %>%
+    group_by(pid,x) %>%
+    summarise(y = mean(y)) %>%
     group_by(x) %>%
     summarise(mean.y = mean(y, na.rm = TRUE),
               sd.y = sd(y, na.rm = TRUE),
@@ -1290,6 +1306,7 @@ for (i in 1:nrow(fig_plot)) {
   orca(figs[[i]], paste('fig/violin_error',row$annotation,row$y,'.pdf',sep="_"), width=row$width, height=row$height)
 }
 
+
 # Use a for loop to iterate over each row in the data frame
 for (i in 1:nrow(fig_plot)) {
   row <- fig_plot[i, ]
@@ -1301,6 +1318,7 @@ for (i in 1:nrow(fig_plot)) {
                            ytitle = row$ytitle, 
                            miny = row$miny, 
                            maxy = row$maxy,
+                           lwidth = row$lwidth,
                            overlay = row$overlay)
   orca(figs[[i]], paste('fig/bar_error',row$annotation,row$y,'.pdf',sep="_"), width=row$width, height=row$height)
 }
@@ -1336,23 +1354,32 @@ for (i in 1:nrow(fig_plot)) {
 }
 
 
-plot_playorder <- function(dataset, ylabel, xlabel = "PlayOrderFB", plabel="Participant") {
+plot_playorder <- function(dataset, ylabel, xlabel = "PlayOrder", plabel="Participant") {
+  #browser()
   df = data.frame(x = dataset[[xlabel]],
                   y = as.numeric(dataset[[ylabel]]),
                   pid = as.character(dataset[[plabel]]))
+  df = df %>% mutate(x2 = as.numeric(x),
+                     x2 = (x2-1) %/% 3,
+                     x = x2,
+                     x2 = NULL)
+  
+  df = df %>% arrange(pid,x) %>% group_by(x) %>%
+    summarise(y = mean(y))
+
 fig %>%
   add_trace(data=df, x=~x, 
-            y=~y, color=~pid,
+            y=~y,
             marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
-            type='scatter',mode='lines',color=I("rgba(120, 120, 120, 1)")) %>%
+            type='scatter',mode='lines+markers',color=I("rgba(120, 120, 120, 1)")) %>%
   add_trace(data=p_lin(df, "y", "x"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
-            type='scatter',mode='lines',color=I("rgba(120, 120, 120, 1)")) %>%
+            type='scatter',mode='lines+markers',color=I("rgba(120, 120, 120, 1)")) %>%
   layout(margin=list(l=55,r=0,t=55,b=0),title=list(font=list(size=15), xanchor="center", xref="paper",
                                                    text=p_lin_coef(df, "y", "x")), showlegend=T,
          xaxis=list(title=' ', zeroline=F, tickfont=list(size=15)),
          yaxis=list(title=' ', zeroline=F, tickfont=list(size=15), showticklabels=T))
 }
-fig_c = plot_playorder(Spl,"Throughput")
+plot_playorder(Spl,"Throughput")
 plot_playorder(Spl,"Action Duration (ms)")
 plot_playorder(Spl,"Action Arm Travel (meter)")
 plot_playorder(Spl,"Straightness (0-1)")
@@ -1487,7 +1514,7 @@ cri = tibble(`Action Duration (ms)` = rev(c(1000, 1150,1250,1350,1450,1550,1650)
              `Total Arm Travel (meter)` = c(45,50,55,60,65,70,75), # 55 is the median
              `Euc. Arm Travel (meter)` =  c(35,40,45,50,55,60,65), #46 median
              `Straightness (0-1)` =  c(0.6,0.7,0.8,0.9,1.0,1.1,1.2), # 0.82 median
-             `Peak Speed (m/s)` =  c(0.4,0.5,0.6,0.7,0.8,0.9,1.00), # 1.41 median
+             `Peak Speed (m/s)` =  c(0.6,0.7,0.8,0.9,1.0,1.1,1.2), # 0.83 median
              `Time to Peak Speed (ms)` =  rev(c(450,500,550,600,650,700,750)),
              `Peak Speed to Target (\\%)` =  c(35,45,55,65,75,85,95),
              `Correspondence (1-7)` =  c(3.0,3.5,4.0,4.5,5.0,5.5,6.0),
@@ -1566,10 +1593,50 @@ Scf_cor <- Scf %>% ungroup() %>% mutate(across(all_of(corr_colvars), ~ as.numeri
 Scm_cor <- Scm %>% ungroup() %>% mutate(across(everything(), ~ as.numeric(.x))) %>% select(-Participant) %>% as.data.frame(.) 
 
 
-PerformanceAnalytics::chart.Correlation(Scf_cor, method="spearman")
+cor.test(Scf_cor$Correspondence, Scf_cor$`Straightness (0-1)`, method="spearman")
+cor.test(Scf_cor$Correspondence, Scf_cor$Distraction, method="spearman")
+
+PerformanceAnalytics::table.Correlation(Scf_cor, method="spearman")
 PerformanceAnalytics::chart.Correlation(Scm_cor, method="spearman")
 
 PerformanceAnalytics::chart.Correlation(Spf_num, method="spearman")
+
+
+tstfun <- function (Ra, Rb, ...) 
+{
+  Ra = checkData(Ra)
+  Rb = checkData(Rb)
+  columns.a = ncol(Ra)
+  columns.b = ncol(Rb)
+  columnnames.a = colnames(Ra)
+  columnnames.b = colnames(Rb)
+  for (column.a in 1:columns.a) {
+    for (column.b in 1:columns.b) {
+      merged.assets = merge(Ra[, column.a, drop = FALSE], 
+                            Rb[, column.b, drop = FALSE])
+      merged.assets = na.omit(merged.assets)
+      htest = cor.test(as.numeric(merged.assets[, 1]), 
+                       as.numeric(merged.assets[, 2]), ...)
+      values = cbind(htest$estimate, htest$p.value, htest$conf.int[1], 
+                     htest$conf.int[2])
+      if (column.a == 1 & column.b == 1) {
+        result.df = data.frame(Value = values)
+        rownames(result.df) = paste(columnnames.a[column.a], 
+                                    columnnames.b[column.b], sep = " to ")
+      }
+      else {
+        nextrow = data.frame(Value = values)
+        rownames(nextrow) = paste(columnnames.a[column.a], 
+                                  columnnames.b[column.b], sep = " to ")
+        result.df = rbind(result.df, nextrow)
+      }
+    }
+  }
+  colnames(result.df) = c("Correlation", "p-value", "Lower CI", 
+                          "Upper CI")
+  result.df
+}
+
 
 #############
 # Latex Table: Post-Experiment Questionnaire
@@ -1660,3 +1727,10 @@ plot_action(Sa_a, mean_trajectory_df)
 # Fine Movement Deceleration Phase
 # Hover Movement Activation Phase
 # Corrective feedback is the last 10% of the motion
+
+
+### Estimate how much time participants spent.
+Sa %>% group_by(Participant, FeedbackJudge) %>% summarise(mintime = min(time_start), maxtime = max(time_end), duration = maxtime - mintime)
+
+Sa %>% group_by(Participant) %>% summarise(mintime = min(time_start), maxtime = max(time_end), duration = maxtime - mintime) %>% summarise(dur = mean(as.numeric(duration)), sd = sd(as.numeric(duration)))
+Sa %>% group_by(Participant, FeedbackJudge) %>% summarise(mintime = min(time_start), maxtime = max(time_end), duration = maxtime - mintime) %>% ungroup() %>% summarise(dur = mean(duration), sd = sd(duration))
