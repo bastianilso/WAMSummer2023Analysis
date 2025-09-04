@@ -44,7 +44,7 @@ count = 0
 
 
 
-debug_flag = F
+debug_flag = T
 #M = M %>% filter(Participant %in% c(7))
 # We should log when people manage to identify the target, e.g. their eyes look at the right target.
 # we should also log at the very least, a direct laser coming from the persons head orientation onto the board, so get an approximation of where the person is looking.
@@ -123,7 +123,7 @@ for (folderpath in M$i) {
            PlayPeriod = ifelse(indication < 1, "PreGame", "Game"),
            PlayPeriod = ifelse(indication > 1, "PostGame", PlayPeriod),
            indication = NULL)
-  browser()
+  #browser()
   # Fill MoleSpawnOrder and PointerShootOrder during the PlayPeriod.
   # ShootOrder reports number until
   #MoleOrder = ifelse(Event == "Mole Spawned", 1,0),
@@ -763,7 +763,7 @@ for (folderpath in M$i) {
   #interp_data$smoothed_speed <- predict(smooth_speed, interp_data$timestamp)$y
   
   if (debug_flag) {
-    browser()
+    #browser()
     D %>% filter(HitOrder == 2) %>% select(Framecount,Timestamp, Event, HitOrder,ActionOrder, MoleOrder, HitStartTimestamp,HitEndTimestamp,MoleId,RightControllerLaserPosWorldX,RightControllerLaserPosWorldY) %>% view()
 
     

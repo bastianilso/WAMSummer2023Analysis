@@ -134,6 +134,14 @@ Sa_a = Sa_a %>% mutate(
 #peak_speed_smooth_to_target = sum(time_delta[rowid > peak_speed_index],na.rm=T),
 #peak_speed_smooth_to_target_pct = (peak_speed_smooth_to_target / duration) * 100,
 
+
+
+
+# recalculate fittsID for laser euc
+Sa = Sa %>% rowwise %>% mutate(
+  laserR_travel_euc = st_length(st_linestring(data.matrix(data.frame(RightControllerLaserPosWorld_euc))))
+)
+
 ###
 # Remove trajectories - causes issues with joining.
 ###
@@ -195,6 +203,17 @@ Sa = Sa %>% rename("MoleIdStart" = "MoleIdStart.x", "MoleIdToHit" = "MoleIdToHit
 #Sa <- Sa %>% left_join(Sd, by=c("Participant" = "Participant", "FeedbackJudge" = "PatternSegmentLabel"))
 Sa <- Sa %>% left_join(Lf)
 
+# fittsID for arm euc
+Sa = Sa %>% mutate(
+  fittsID_arm = log2(travel_arm_euc / MoleSize + 1)
+)
+
+# fittsID for laser euc
+Sa = Sa %>% mutate(
+  fittsID_laser = log2(laserR_travel_euc/ MoleSize + 1)
+)
+
+
 # Create variable to keep track of order
 Sa <- Sa %>% group_by(Participant, FeedbackJudge) %>% mutate(
   Orderflag = row_number(),
@@ -242,6 +261,16 @@ Sa = Sa %>% ungroup() %>% group_by(Participant, PerformanceFeedback) %>%
          PlayOrderFB = PlayOrderFB - min(PlayOrderFB),
          ActionOrderFB = ActionOrder-min(ActionOrder))
 
+###
+# Remove First Five Actions Where Feedback System Gets Calibrated
+###
+# 2025.09.03: We DONT do this as we dont have time re-run the analysis and there is little gain.
+#hitnumber, from mole 1 to mole 20
+#Sa = Sa %>% group_by(Participant.f, FeedbackJudge.f) %>% 
+#  mutate(counter = 1,
+#         hitnumber = cumsum(counter)) %>%
+#  filter(hitnumber > 5)
+  
   
 
 # Scfm: Summary of metric per feedback condition
@@ -259,6 +288,32 @@ Scfm <- Sa %>% group_by(FeedbackJudge) %>%
 )
 
 Scfm_sd <- Sa %>% group_by(FeedbackJudge) %>% 
+  summarize(
+    `Correspondence (1-7)` = sd(as.numeric(AlgoCorrespondFastSlow.f)),
+    `Action Arm Travel (meter)` = sd(travel_arm),
+    `Action Duration (ms)`= sd(duration_ms),
+    `Straightness (0-1)` = sd(straightness),
+    `Peak Speed (m/s)` = sd(peak_speed_smooth),
+    `Time to Peak Speed (ms)` = sd(time_to_peak_speed_smooth_ms),
+    `Peak Speed to Target (\\%)` = sd(peak_speed_smooth_to_target_pct),
+    `Fitts ID` = sd(fittsID),
+    `Throughput (bits/s)` = sd(throughput),
+  )
+
+Scmm <- Sa %>% group_by(JudgementType) %>% 
+  summarize(
+    `Correspondence (1-7)` = mean(as.numeric(AlgoCorrespondFastSlow.f)),
+    `Action Arm Travel (meter)` = mean(travel_arm),
+    `Action Duration (ms)`= mean(duration_ms),
+    `Straightness (0-1)` = mean(straightness),
+    `Peak Speed (m/s)` = mean(peak_speed_smooth),
+    `Time to Peak Speed (ms)` = mean(time_to_peak_speed_smooth_ms),
+    `Peak Speed to Target (\\%)` = mean(peak_speed_smooth_to_target_pct),
+    `Fitts ID` = mean(fittsID),
+    `Throughput (bits/s)` = mean(throughput),
+  )
+
+Scmm_sd <- Sa %>% group_by(JudgementType) %>% 
   summarize(
     `Correspondence (1-7)` = sd(as.numeric(AlgoCorrespondFastSlow.f)),
     `Action Arm Travel (meter)` = sd(travel_arm),
@@ -310,9 +365,36 @@ Sc = Sa %>% group_by(Participant, FeedbackJudge.f) %>%
     `Performance Metric` = unique(JudgementType),
     `Throughput (bits/s)` = mean(throughput),
     `Fitts ID` = mean(fittsID),
+    PlayOrder = as.numeric(unique(PlayOrder)),
+    PlayOrderFB = as.numeric(unique(PlayOrderFB))
   ) %>% mutate(
     Participant.f = as.factor(Participant),
   )
+
+Sc = Sc %>% ungroup() %>% 
+  mutate(max_speed = max(`Peak Speed (m/s)`),
+         max_time = max(`Action Duration (ms)`),
+         max_straight = max(`Straightness (0-1)`),
+  ) %>% group_by(Participant.f, FeedbackJudge.f) %>%
+  mutate(speed_perf = `Peak Speed (m/s)` / max_speed, # this creates a value between 0 and 1 where higher values equal better performance, compared to everyone.
+         time_perf = 1 - (`Action Duration (ms)` / max_time),
+         straight_perf = `Straightness (0-1)` / max_straight)  %>%
+  summarise(speed_perf = mean(speed_perf),
+            time_perf = mean(time_perf),
+            straight_perf = mean(straight_perf),
+            overall_perf = speed_perf + time_perf + straight_perf) %>% right_join(Sc)
+
+fig %>% add_trace(data=Sc %>% group_by(`Performance Feedback`), x=~PlayOrderFB, y=~`Peak Speed (m/s)`, mode='markers',type='scatter') %>%
+  add_trace(data=p_lin(Sc, "Peak Speed (m/s)", "PlayOrderFB"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(120, 120, 120, 1)"))
+  
+fm <- lm(`Action Duration (ms)` ~ PlayOrderFB, data = Sc)
+fm <- lm(`Peak Speed (m/s)` ~ PlayOrderFB, data = Sc) # 4%
+fm <- lm(`Action Duration (ms)` ~ PlayOrderFB, data = Sc) # -12%
+fm <- lm(`Straightness (0-1)` ~ PlayOrderFB, data = Sc) # 0% 
+
+fig %>% add_trace(data=Sc %>% group_by(PlayOrder) %>% summarise(time_perf = mean(time_perf)) , x=~PlayOrder, y=~time_perf, mode='markers',type='scatter')
+
 
 # Scf: Summary of Condition-Feedback
 Scf = Sa %>% group_by(Participant, PerformanceFeedback.f) %>%
@@ -368,6 +450,57 @@ Scm = Sa %>% group_by(Participant, JudgementType.f) %>%
     `Performance Metric` = as.factor(`Performance Metric`),
     JudgementOrder = as.numeric(as.factor(JudgementOrder)),
   ) 
+
+Scm = Scm %>% ungroup() %>% 
+  mutate(max_speed = max(`Peak Speed (m/s)`),
+         max_time = max(`Action Duration (ms)`),
+         max_straight = max(`Straightness (0-1)`),
+  ) %>% group_by(Participant.f) %>%
+  mutate(speed_perf = `Peak Speed (m/s)` / max_speed, # this creates a value between 0 and 1 where higher values equal better performance, compared to everyone.
+         time_perf = 1 - (`Action Duration (ms)` / max_time),
+         straight_perf = `Straightness (0-1)` / max_straight)  %>%
+  summarise(speed_perf = mean(speed_perf),
+            time_perf = mean(time_perf),
+            straight_perf = mean(straight_perf),
+            overall_perf = speed_perf + time_perf + straight_perf) %>%
+  arrange(-overall_perf) %>% select(Participant.f, overall_perf, straight_perf, time_perf, speed_perf) %>% ungroup() %>%
+  rownames_to_column("Place") %>% mutate(Place = as.numeric(Place)) %>% right_join(Scm)
+
+
+
+
+Scm = Scm %>% group_by(Participant.f) %>% filter(`Performance Metric` == "Time") %>%
+  summarise(duration_timeperf = mean(`Action Duration (ms)`),unique(Participant.f)) %>% right_join(Scm)
+
+Scm = Scm %>% ungroup() %>% filter(`Performance Metric` %in% c("Speed","Distance")) %>% group_by(Participant.f) %>%
+  summarise(duration_otherperf = mean(`Action Duration (ms)`),unique(Participant.f)) %>% right_join(Scm)
+
+Scm = Scm %>% group_by(Participant.f) %>% filter(`Performance Metric` == "Speed") %>%
+  summarise(speed_speedperf = mean(`Peak Speed (m/s)`),unique(Participant.f)) %>% right_join(Scm)
+
+Scm = Scm %>% ungroup() %>% filter(`Performance Metric` %in% c("Time","Distance")) %>% group_by(Participant.f) %>%
+  summarise(speed_otherperf = mean(`Peak Speed (m/s)`),unique(Participant.f)) %>% right_join(Scm)
+
+Scm = Scm %>% group_by(Participant.f) %>% filter(`Performance Metric` == "Distance") %>%
+  summarise(distance_distanceperf = mean(`Straightness (0-1)`),unique(Participant.f)) %>% right_join(Scm)
+
+Scm = Scm %>% ungroup() %>% filter(`Performance Metric` %in% c("Time","Speed")) %>% group_by(Participant.f) %>%
+  summarise(distance_otherperf = mean(`Straightness (0-1)`),unique(Participant.f)) %>% right_join(Scm)
+
+Scm %>% group_by(Participant.f) %>% dplyr::slice(1) %>% group_by(JudgementType.f) %>% summarise(distperf = mean(distance_distanceperf), otherdist = mean(distance_otherperf), diff = distperf - otherdist)
+Scm %>% group_by(Participant.f) %>% dplyr::slice(1) %>% group_by(JudgementType.f) %>% mutate(diff = distance_distanceperf - distance_otherperf) %>% summarise(sd(diff))
+
+Scm %>% group_by(Participant.f) %>% dplyr::slice(1) %>% group_by(JudgementType.f) %>% summarise(perf = mean(speed_speedperf), other = mean(speed_otherperf), diff = perf - other)
+Scm %>% group_by(Participant.f) %>% dplyr::slice(1) %>% group_by(JudgementType.f) %>% mutate(diff = speed_speedperf - speed_otherperf) %>% summarise(sd(diff))
+
+Scm = Scm %>% ungroup() %>% mutate(speed_adaption = speed_speedperf / speed_otherperf,
+               time_adaption = duration_timeperf / duration_otherperf,
+               distance_adaption = distance_distanceperf / distance_otherperf,
+               best_adaption = (speed_adaption + time_adaption + distance_adaption) / 3) %>%
+  arrange(-best_adaption) %>% select(Participant.f, best_adaption, time_adaption, speed_adaption, distance_adaption) %>% group_by(Participant.f) %>% 
+  summarise(across(everything(), ~ unique(.))) %>%
+  rownames_to_column("AdaptionRank") %>% mutate(AdaptionRank = as.numeric(AdaptionRank)) %>% right_join(Scm)
+
 
 
 # Sp: Summary of Participants
@@ -455,6 +588,141 @@ Spl = Sa %>% group_by(Participant,PlayOrder) %>%
 #  summarise(across(any_of(matches("^(?!PlayOrder$).*",perl=T)), ~ predict(lm(.x ~ PlayOrder, data=Spl)))) %>%
 #  rename_with(~ paste0(.x,"_reg"), matches("^(?!PlayOrder$).*",perl=T)) %>%
 #  rename("Participant" = "Participant_reg")
+
+###
+# Calculating Performance cost/proficiency
+###
+
+non_straight = Sc %>% group_by(`Performance Feedback`) %>% filter(`Performance Metric` %in% c("Speed","Time")) %>%
+  summarise(nondistance_straightness = mean(`Straightness (0-1)`))
+
+straight = Sc %>% group_by(`Performance Feedback`) %>% filter(`Performance Metric` %in% c("Distance")) %>%
+  summarise(distance_straightness = mean(`Straightness (0-1)`))
+
+straight %>% left_join(non_straight) %>%
+  mutate(increase = (distance_straightness - nondistance_straightness))
+
+non_speed = Sc %>% group_by(`Performance Feedback`) %>% filter(`Performance Metric` %in% c("Distance","Time")) %>%
+  summarise(non_speed = mean(`Peak Speed (m/s)`))
+
+speed = Sc %>% group_by(`Performance Feedback`) %>% filter(`Performance Metric` %in% c("Speed")) %>%
+  summarise(speed = mean(`Peak Speed (m/s)`))
+
+speed %>% left_join(non_speed) %>%
+  mutate(increase = (non_speed - speed),
+         percentage = (speed / non_speed)-1)
+
+non_time = Sc %>% group_by(`Performance Feedback`) %>% filter(`Performance Metric` %in% c("Distance","Speed")) %>%
+  summarise(non_time = mean(`Action Duration (ms)`))
+
+time = Sc %>% group_by(`Performance Feedback`) %>% filter(`Performance Metric` %in% c("Time")) %>%
+  summarise(time = mean(`Action Duration (ms)`))
+
+time %>% left_join(non_time) %>%
+  mutate(increase = (non_time - time),
+         percentage = (non_time / time)-1 )
+
+
+non_speed = Sc %>% ungroup() %>% filter(`Performance Metric` %in% c("Distance")) %>%
+  summarise(non_speed = mean(`Peak Speed (m/s)`))
+
+speed = Sc %>% ungroup() %>% filter(`Performance Metric` %in% c("Speed")) %>%
+  summarise(speed = mean(`Peak Speed (m/s)`))
+
+speed %>% bind_cols(non_speed) %>%
+  mutate(increase = (speed - non_speed),
+         percentage = (speed / non_speed)-1)
+
+
+Sc = Sc %>% ungroup() %>% 
+ mutate(max_speed = max(`Peak Speed (m/s)`),
+        max_time = max(`Action Duration (ms)`),
+        max_straight = max(`Straightness (0-1)`),
+ ) %>% group_by(Participant.f) %>%
+ mutate(speed_perf = `Peak Speed (m/s)` / max_speed,
+        time_perf = 1 - (`Action Duration (ms)` / max_time),
+        straight_perf = `Straightness (0-1)` / max_straight)  %>%
+ summarise(speed_perf = mean(speed_perf),
+           time_perf = mean(time_perf),
+           straight_perf = mean(straight_perf),
+           overall_perf = speed_perf + time_perf + straight_perf) %>%
+ arrange(-overall_perf) %>% select(Participant.f, overall_perf) %>% ungroup() %>%
+ rownames_to_column("Place") %>% mutate(Place = as.numeric(Place)) %>% right_join(Sc)
+
+
+non_speed = Sc %>% group_by(Place, `Performance Metric`) %>% filter(`Performance Metric` %in% c("Time","Distance")) %>%
+  summarise(non_speed = mean(`Peak Speed (m/s)`)) %>%
+  pivot_wider(names_from = `Performance Metric`, values_from = non_speed)
+
+speed = Sc %>% group_by(Place, `Performance Metric`) %>% filter(`Performance Metric` %in% c("Speed")) %>%
+  summarise(speed = mean(`Peak Speed (m/s)`))
+
+Speed_Pct = speed %>% left_join(non_speed) %>%
+  mutate(increase_time = (speed - Time),
+         percentage_time = ((speed / Time)-1) * 100,
+         increase_distance = (speed - Distance),
+         percentage_distance = ((speed / Distance)-1) * 100,
+         increase_all = speed - ((Time+Distance)/2),
+         ) %>% arrange(Place)
+
+Speed_Pct = Speed_Pct %>% select(PID = Place, `Peak Speed` = speed, Distance, percentage_distance, Time, percentage_time) %>%
+  mutate(
+    across(everything(), ~ format(round(.x,2),nsmall=2)),
+    percentage_distance = paste0(percentage_distance,"\\%"),
+    percentage_time = paste0(percentage_time,"\\%"),
+    across(everything(), ~ as.character(.x)),
+  ) %>% arrange(PID) #pivot_longer(cols=-c(PID), names_to = "Variables") %>% 
+  #pivot_wider(names_from = `PID`, values_from = value)
+
+paste(colnames(Speed_Pct), collapse=" & ")
+writeLines(paste(Speed_Pct %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ \n"), "table.txt")
+
+pivot_longer(cols=-c(Condition), names_to = "Variables") %>%
+  pivot_wider(names_from = Condition, values_from = value)
+
+# Group-level
+non_speed = Sc %>% group_by(`Performance Metric`) %>% filter(`Performance Metric` %in% c("Time","Distance")) %>%
+  summarise(non_speed = mean(`Peak Speed (m/s)`)) %>%
+  pivot_wider(names_from = `Performance Metric`, values_from = non_speed)
+
+speed = Sc %>% group_by(`Performance Metric`) %>% filter(`Performance Metric` %in% c("Speed")) %>%
+  summarise(speed = mean(`Peak Speed (m/s)`))
+
+Speed_Pct = speed %>% bind_cols(non_speed) %>%
+  mutate(increase_time = (speed - Time),
+         percentage_time = ((speed / Time)-1) * 100,
+         increase_distance = (speed - Distance),
+         percentage_distance = ((speed / Distance)-1) * 100,
+         increase_all = speed - ((Time+Distance)/2),
+  )
+Speed_Pct = Speed_Pct %>% select(`Peak Speed` = speed, Distance, percentage_distance, Time, percentage_time) %>%
+  mutate(
+    across(everything(), ~ round(.x,2)),
+    percentage_distance = paste0(percentage_distance,"\\%"),
+    percentage_time = paste0(percentage_time,"\\%"),
+  ) 
+
+#%>%
+#  summarise(max_pct = max(percentage),
+#            min_pct = min(percentage))
+
+Spd_long = Speed_Pct %>% mutate(Distance_norm = scales::rescale(Distance, from=c(min(Distance),max(Distance)))),
+                                
+                                (max(Distance) - min(Distance))  Avg = Distance+Time+`Peak Speed` )
+%>% select(c(-percentage_time, -percentage_distance)) %>% pivot_longer(cols=-c(PID), names_to = "Variables") 
+
+fig %>% add_trace(data=Spd_long, 
+              x=~value, y=~Variables, type='scatter',mode='markers+text',
+              mode='markers+text', marker=list(size=20, color=I('black')), hoverinfo="text", text=~PID, color=I('white'))
+fig %>%
+  add_trace(data=Spc, x=~OrderTotal, y=~acc_rate, color=~Participant, opacity=.6,
+            type='scattergl', mode='markers+text', marker=list(size=20), hoverinfo="text", text=paste(Spc$Participant, Spc$Condition)) %>%
+  add_trace(name="Frust. (1-7)", x=jitter(Spc$OrderTotal,amount=0.05), y=jitter(Spc$FrustNormalized,amount=0.02), color=I('blue'), opacity=.6,
+            type='scattergl', mode='markers+lines') %>%
+  layout(yaxis=list(range=c(-0.1,1.1)))
+
+
+
 
 ###
 # Reporting various means in Results
@@ -625,6 +893,11 @@ tables_friedman(Scf, "Overall Feel","Performance Feedback","Participant")
 
 # Todo: Test Overall Preference
 
+###
+# Pre-test filtering
+###
+
+# 1) 
 
 ###
 # Simple mode: Repeated Measures Multivariate Anova
@@ -641,7 +914,7 @@ tables_rmanova <- function(df, plabel, measlabel,treatlabel1, treatlabel2, contr
                        treat2 = df[[treatlabel2]],
                        participant = df[[plabel]])
   
-  aov_result <- aov_ez(id="participant", dv="measurement", dataset, within = c("treat1","treat2"))
+  aov_result <- aov_ez(id="participant", dv="measurement", dataset, within = c("treat2")) #treat1 is performance feedback, but we dont 
   aov_summary = summary(aov_result, effect_size ="partial")
   
   
@@ -701,7 +974,7 @@ tables_rmanova <- function(df, plabel, measlabel,treatlabel1, treatlabel2, contr
   return(list(s1,s2,s3))
 }
 
-aov_ez(id="Participant.f", dv="duration_ms", within = c("PerformanceFeedback","JudgementType"), data=Sa)
+aov_ez(id="Participant.f", dv="straightness_pct", within = c("JudgementType"), data=Sa)
 
 tables_rmanova(Sa, "Participant.f", "duration_ms","PerformanceFeedback", "JudgementType") 
 tables_rmanova(Sa, "Participant.f", "travel_arm","PerformanceFeedback", "JudgementType") 
@@ -714,7 +987,7 @@ tables_rmanova(Sa, "Participant.f", "throughput","PerformanceFeedback", "Judgeme
 
 
 tables_rmanova_single <- function(df, plabel, measlabel,treatlabel1) {
-  browser()
+  #browser()
   dataset = data.frame(measurement = df[[measlabel]],
                        treat1 = df[[treatlabel1]],
                        participant = df[[plabel]])
@@ -779,6 +1052,7 @@ tables_rmanova_single <- function(df, plabel, measlabel,treatlabel1) {
 }
 
 tables_rmanova_single(Scm, "Participant.f", "Action Duration (ms)","JudgementType.f") 
+
 tables_rmanova_single(Scm, "Participant.f", "Action Arm Travel (meter)","JudgementType.f") 
 tables_rmanova_single(Scm, "Participant.f", "Peak Speed (m/s)","JudgementType.f") 
 tables_rmanova_single(Scm, "Participant.f", "Peak Speed to Target (\\%)","JudgementType.f")
@@ -1584,6 +1858,174 @@ paste(colnames(Scfm_table), collapse=" & ")
 writeLines(paste(Scfm_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ \n"), "table.txt")
 
 #############
+# Latex Table: Metrics
+#############
+
+cri = tibble(`Action Duration (ms)` = rev(c(1000, 1150,1250,1350,1450,1550,1650)), # 1.353 is the median
+             `Participant` = c(30,100,100,100,100,100,100), # always g0
+             `Actions (n)` = c(80,100,210,300,300,300,300), # always g0
+             `Actions Analyzed (n)` = c(30,100,210,300,300,300,300), # always g0
+             `Action Arm Travel (meter)` = c(0.15,0.2,0.25,0.3,0.35,0.4,0.45), # 0.2839 is the median
+             `Total Arm Travel (meter)` = c(45,50,55,60,65,70,75), # 55 is the median
+             `Euc. Arm Travel (meter)` =  c(35,40,45,50,55,60,65), #46 median
+             `Straightness (0-1)` =  c(0.6,0.7,0.8,0.9,1.0,1.1,1.2), # 0.82 median
+             `Peak Speed (m/s)` =  c(0.6,0.7,0.8,0.9,1.0,1.1,1.2), # 0.83 median
+             `Time to Peak Speed (ms)` =  rev(c(450,500,550,600,650,700,750)),
+             `Peak Speed to Target (\\%)` =  c(35,45,55,65,75,85,95),
+             `Correspondence (1-7)` =  c(3.0,3.5,4.0,4.5,5.0,5.5,6.0),
+             `Fitts ID` = c(2.5,2.6,2.7,2.8,2.9,3.0,3.1), #median 2.75
+             `Throughput (bits/s)` = c(2.13,2.18,2.23,2.28,2.33,2.38,2.43), #median 2.23
+             colors = c("g3","g4", "g5", "g6", "g5","g4","g3"),)
+
+Scmm_f = read.csv("wam_col_latex.csv", sep=",")
+
+# filter Scfm_f to only have the columns Scfm has
+Scmm_f = Scmm_f %>% filter(name %in% colnames(Scmm))
+
+# Define columns to color
+Scmm_col = Scmm_f %>% filter(color) %>% pull(name)
+# Define which cols should have rounded numbers.
+Scmm_numcols = Scmm_f %>% filter(dec) %>% pull(name)
+Scmm_nodeccols = Scmm_f %>% filter(nodec) %>% pull(name)
+Scmm_perccols = Scmm_f %>% filter(perc) %>% pull(name)
+# Define which cols should have standard deviation.
+Scmm_sdcols = Scmm_f %>% filter(sd) %>% pull(name)
+
+Scmm_table = Scmm
+
+# Generate colors from col values
+#Scmm_table <- Scmm_table %>% mutate(across(all_of(Scmm_col), ~ t_color(.x,  cri[[cur_column()]],cri$colors), .names = "{.col}_c"))
+
+
+# Apply number rounding
+Scmm_table <- Scmm_table %>% mutate(across(all_of(Scmm_numcols), ~ format(round(.x,2), nsmall = 2)))
+
+# apply percentage
+# already applied now
+#Scmm_table <- Scmm_table %>% mutate(across(all_of(c(Scmm_perccols,Scmm_nodeccols)), ~ round(.x,0)))
+#Scmm_table <- Scmm_table %>% mutate(across(all_of(Scmm_perccols), ~ paste0(as.character(.x),"\\%")))
+
+Scmmsd_table <- Scmm_sd %>% mutate(across(all_of(c(Scmm_perccols,Scmm_nodeccols)), ~ round(.x,0)))
+Scmmsd_table <- Scmmsd_table %>% mutate(across(all_of(Scmm_numcols), ~ format(round(.x,1), nsmall = 1)))
+
+# Add colors to numbers
+#Scmm_table <- Scmm_table %>% mutate(across(all_of(Scmm_col), ~ paste0("\\cellcolor{", get(paste0(cur_column(), "_c")), "}", as.character(.x))))
+
+# Add standard deviation to numbers
+Scmm_table <- Scmm_table %>% mutate(across(all_of(Scmm_col), ~ paste0(as.character(.x), " {\\color{sd} ", Scmmsd_table[[cur_column()]], "}")))
+
+#Scfm_table <- Scfm_table %>% mutate(across(all_of(Scfm_sdcols), ~ ifelse(cur_column() %in% Scfm_sdcols,
+#                                                                      paste0(.x, " (", Scfmsd_table[[cur_column()]],")"),
+#                                                                      .x)))
+# Cleanup color cols and format all as strings
+Scmm_table <- Scmm_table %>% select(-ends_with("_c")) %>%
+  mutate(across(everything(), as.character))
+
+#condition_order = c("OperationTime","OperationSpeed","OperationDistance","ActionTime","ActionSpeed","ActionDistance","TaskTime","TaskSpeed","TaskDistance")
+#Scmm_table$FeedbackJudge = factor(Scm_table$FeedbackJudge,levels=c("All",condition_order))
+#Scmm_table = Scmm_table %>% arrange(FeedbackJudge)
+
+# Pivot
+Scmm_table <- Scmm_table %>% pivot_longer(cols=-c(JudgementType), names_to = "Variable")  %>%
+  pivot_wider(names_from = Variable, values_from = value)
+
+#Sp_table <- Sp_table %>% group_by(Variable) %>%
+#  group_modify(~ add_row(`1`=paste("\\multicolumn{5}{l}{ \\underline{",.y,"} }"),.before=0, .x)) %>%
+#  ungroup() %>% replace(is.na(.)," ") %>%
+#  select(-Variable)
+
+# Remove unneeded cols
+Scmm_table = Scmm_table %>% select(-`Fitts ID`, `Actions (n)`)
+
+# Export
+paste(colnames(Scmm_table), collapse=" & ")
+writeLines(paste(Scmm_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ \n"), "table.txt")
+
+#############
+# Latex Table: Feedback
+#############
+
+cri = tibble(`Action Duration (ms)` = rev(c(1000, 1150,1250,1350,1450,1550,1650)), # 1.353 is the median
+             `Participant` = c(30,100,100,100,100,100,100), # always g0
+             `Actions Analyzed (n)` = c(30,100,210,300,300,300,300), # always g0
+             `Action Arm Travel (meter)` = c(0.15,0.2,0.25,0.3,0.35,0.4,0.45), # 0.2839 is the median
+             `Total Arm Travel (meter)` = c(45,50,55,60,65,70,75), # 55 is the median
+             `Euc. Arm Travel (meter)` =  c(35,40,45,50,55,60,65), #46 median
+             `Straightness (0-1)` =  c(0.6,0.7,0.8,0.9,1.0,1.1,1.2), # 0.82 median
+             `Peak Speed (m/s)` =  c(0.6,0.7,0.8,0.9,1.0,1.1,1.2), # 0.83 median
+             `Time to Peak Speed (ms)` =  rev(c(450,500,550,600,650,700,750)),
+             `Peak Speed to Target (\\%)` =  c(35,45,55,65,75,85,95),
+             `Correspondence (1-7)` =  c(3.0,3.5,4.0,4.5,5.0,5.5,6.0),
+             `Fitts ID` = c(2.5,2.6,2.7,2.8,2.9,3.0,3.1), #median 2.75
+             `Throughput (bits/s)` = c(2.13,2.18,2.23,2.28,2.33,2.38,2.43), #median 2.23
+             colors = c("g3","g4", "g5", "g6", "g5","g4","g3"),)
+
+Scmm_f = read.csv("wam_col_latex.csv", sep=",")
+
+# filter Scfm_f to only have the columns Scfm has
+Scmm_f = Scmm_f %>% filter(name %in% colnames(Scmm))
+
+# Define columns to color
+Scmm_col = Scmm_f %>% filter(color) %>% pull(name)
+# Define which cols should have rounded numbers.
+Scmm_numcols = Scmm_f %>% filter(dec) %>% pull(name)
+Scmm_nodeccols = Scmm_f %>% filter(nodec) %>% pull(name)
+Scmm_perccols = Scmm_f %>% filter(perc) %>% pull(name)
+# Define which cols should have standard deviation.
+Scmm_sdcols = Scmm_f %>% filter(sd) %>% pull(name)
+
+Scmm_table = Scmm
+
+# Generate colors from col values
+#Scmm_table <- Scmm_table %>% mutate(across(all_of(Scmm_col), ~ t_color(.x,  cri[[cur_column()]],cri$colors), .names = "{.col}_c"))
+
+
+# Apply number rounding
+Scmm_table <- Scmm_table %>% mutate(across(all_of(Scmm_numcols), ~ format(round(.x,2), nsmall = 2)))
+
+# apply percentage
+# already applied now
+Scmm_table <- Scmm_table %>% mutate(across(all_of(c(Scmm_perccols,Scmm_nodeccols)), ~ round(.x,0)))
+Scmm_table <- Scmm_table %>% mutate(across(all_of(Scmm_perccols), ~ paste0(as.character(.x),"\\%")))
+
+Scmmsd_table <- Scmm_sd %>% mutate(across(all_of(c(Scmm_perccols,Scmm_nodeccols)), ~ round(.x,0)))
+Scmmsd_table <- Scmmsd_table %>% mutate(across(all_of(Scmm_numcols), ~ format(round(.x,1), nsmall = 1)))
+
+# Add colors to numbers
+#Scmm_table <- Scmm_table %>% mutate(across(all_of(Scmm_col), ~ paste0("\\cellcolor{", get(paste0(cur_column(), "_c")), "}", as.character(.x))))
+
+# Add standard deviation to numbers
+Scmm_table <- Scmm_table %>% mutate(across(all_of(Scmm_col), ~ paste0(as.character(.x), " {\\color{sd} ", Scmmsd_table[[cur_column()]], "}")))
+
+#Scfm_table <- Scfm_table %>% mutate(across(all_of(Scfm_sdcols), ~ ifelse(cur_column() %in% Scfm_sdcols,
+#                                                                      paste0(.x, " (", Scfmsd_table[[cur_column()]],")"),
+#                                                                      .x)))
+# Cleanup color cols and format all as strings
+Scmm_table <- Scmm_table %>% select(-ends_with("_c")) %>%
+  mutate(across(everything(), as.character))
+
+#condition_order = c("OperationTime","OperationSpeed","OperationDistance","ActionTime","ActionSpeed","ActionDistance","TaskTime","TaskSpeed","TaskDistance")
+#Scmm_table$FeedbackJudge = factor(Scm_table$FeedbackJudge,levels=c("All",condition_order))
+#Scmm_table = Scmm_table %>% arrange(FeedbackJudge)
+
+# Pivot
+Scmm_table <- Scmm_table %>% pivot_longer(cols=-c(JudgementType), names_to = "Variable")  %>%
+  pivot_wider(names_from = Variable, values_from = value)
+
+#Sp_table <- Sp_table %>% group_by(Variable) %>%
+#  group_modify(~ add_row(`1`=paste("\\multicolumn{5}{l}{ \\underline{",.y,"} }"),.before=0, .x)) %>%
+#  ungroup() %>% replace(is.na(.)," ") %>%
+#  select(-Variable)
+
+Scmm_table = Scmm_table %>% select(-`Fitts ID`)
+
+# Export
+paste(colnames(Scmm_table), collapse=" & ")
+writeLines(paste(Scmm_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ \n"), "table.txt")
+
+
+
+#############
 # Correlations
 #############
 
@@ -1592,6 +2034,8 @@ corr_colvars = Scf %>% ungroup() %>% select(-Participant, -`Actions (n)`, -`Acti
 Scf_cor <- Scf %>% ungroup() %>% mutate(across(all_of(corr_colvars), ~ as.numeric(.x))) %>% select(all_of(corr_colvars)) %>% as.data.frame(.)
 Scm_cor <- Scm %>% ungroup() %>% mutate(across(everything(), ~ as.numeric(.x))) %>% select(-Participant) %>% as.data.frame(.) 
 
+cor.test(Scm_cor$best_adaption, Scm_cor$overall_perf, method="spearman")
+cor.test(Scm_cor$speed_adaption, Scm_cor$speed_perf, method="spearman")
 
 cor.test(Scf_cor$Correspondence, Scf_cor$`Straightness (0-1)`, method="spearman")
 cor.test(Scf_cor$Correspondence, Scf_cor$Distraction, method="spearman")
@@ -1643,7 +2087,247 @@ tstfun <- function (Ra, Rb, ...)
 #############
 
 
+###
+# How peak speed rose over the course of the study.
+###
+library(lubridate)
 
+#hitnumber, from mole 1 to mole 20
+Sa = Sa %>% group_by(Participant.f, FeedbackJudge.f) %>% 
+  mutate(counter = 1,
+         hitnumber = cumsum(counter))
+
+Sa = Scm %>% select(Participant, Place, AdaptionRank) %>% right_join(Sa)
+
+Sa2 = Sa %>% filter(Place > 11, hitnumber > 5)  
+Sa2 = Sa %>% filter(AdaptionRank < 12, hitnumber > 5)  
+
+Scm %>% filter(ad)
+
+# Sc: Summary of Condition
+Sc2 = Sa2 %>% group_by(Participant, FeedbackJudge.f) %>%
+  dplyr::summarise(
+    `Actions (n)` = max(HitOrder),
+    `Actions Analyzed (n)` = length(HitOrder)-1,
+    `Action Duration (ms)` = mean(duration_ms),
+    `Action Arm Travel (meter)` = mean(travel_arm),
+    `Total Arm Travel (meter)` = sum(travel_arm),
+    `Euc. Arm Travel (meter)` = sum(travel_arm_euc),
+    `Straightness (0-1)` = mean(straightness),
+    `Peak Speed (m/s)` = mean(peak_speed_smooth),
+    `Time to Peak Speed (ms)` = mean(time_to_peak_speed_smooth_ms),
+    `Peak Speed to Target (\\%)` = mean(peak_speed_smooth_to_target_pct),
+    `Correspondence` = unique(AlgoCorrespondFastSlow.f),
+    MiniPatternLabel = paste(unique(MiniPatternLabel),collapse=", "),
+    `Performance Feedback` = unique(PerformanceFeedback.f),
+    `Performance Metric` = unique(JudgementType),
+    `Throughput (bits/s)` = mean(throughput),
+    `Fitts ID` = mean(fittsID),
+    PlayOrder = unique(PlayOrder)
+  ) %>% mutate(
+    Participant.f = as.factor(Participant),
+  )
+
+
+
+fig %>% add_trace(data=Sa2 %>% ungroup() %>% filter(PerformanceFeedback.f %in% c("Operation")) %>% group_by(fittsID_laser) %>% summarise(peak_speed=mean(peak_speed_smooth)), opacity=0.95, marker=list(size=5,color="rgba(255,0,0, 1.0)"),
+                  x=~fittsID_laser, y=~peak_speed, type='scatter',mode='markers') %>%
+  add_trace(data=Sa2 %>% ungroup() %>% filter(PerformanceFeedback.f %in% c("Action")) %>% group_by(fittsID_laser) %>% summarise(peak_speed=mean(peak_speed_smooth)), opacity=0.95, marker=list(size=5,color="rgba(0,0,255, 1.0)"),
+                x=~fittsID_laser, y=~peak_speed, type='scatter',mode='markers') %>%
+        add_trace(data=Sa2 %>% ungroup() %>% group_by(fittsID_laser), opacity=0.3, marker=list(size=5,color="rgba(60,120,60, 0.5.0)"),
+            x=~fittsID_laser, y=~peak_speed_smooth, type='scatter',mode='markers') %>%
+        add_trace(data=p_lin(Sa2 %>% filter(PerformanceFeedback.f %in% c("Operation")), "peak_speed_smooth", "fittsID_laser"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+          type='scatter',mode='lines+markers',color=I("rgba(255, 120, 120, 1)")) %>%
+  add_trace(data=p_lin(Sa2 %>% filter(PerformanceFeedback.f %in% c("Action")), "peak_speed_smooth", "fittsID_laser"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(120, 120, 255, 1)")) %>%
+        add_trace(data=p_lin(Sa2 %>% filter(PerformanceFeedback.f %in% c("Task")), "peak_speed_smooth", "fittsID_laser"), x=~x,y=~y, marker=list(size=3,color="rgba(120,255,120, 0.0)",line=list(width=1.5,color="rgba(120,255,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(20, 200, 20, 1)"))
+
+fig %>% add_trace(data=Sa2 %>% ungroup() %>% filter(PerformanceFeedback.f %in% c("Operation")) %>% group_by(fittsID_laser) %>% summarise(duration_ms=mean(duration_ms)), opacity=0.95, marker=list(size=5,color="rgba(255,0,0, 1.0)"),
+                  x=~fittsID_laser, y=~duration_ms, type='scatter',mode='markers') %>%
+  add_trace(data=Sa2 %>% ungroup() %>% filter(PerformanceFeedback.f %in% c("Action")) %>% group_by(fittsID_laser) %>% summarise(duration_ms=mean(duration_ms)), opacity=0.95, marker=list(size=5,color="rgba(0,0,255, 1.0)"),
+            x=~fittsID_laser, y=~duration_ms, type='scatter',mode='markers') %>%
+  add_trace(data=Sa2 %>% ungroup() %>% group_by(fittsID_laser), opacity=0.3, marker=list(size=5,color="rgba(60,120,60, 0.5.0)"),
+            x=~fittsID_laser, y=~duration_ms, type='scatter',mode='markers') %>%
+  add_trace(data=p_lin(Sa2 %>% filter(PerformanceFeedback.f %in% c("Operation")), "duration_ms", "fittsID_laser"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(255, 120, 120, 1)")) %>%
+  add_trace(data=p_lin(Sa2 %>% filter(PerformanceFeedback.f %in% c("Action")), "duration_ms", "fittsID_laser"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(120, 120, 255, 1)")) %>%
+  add_trace(data=p_lin(Sa2 %>% filter(PerformanceFeedback.f %in% c("Task")), "duration_ms", "fittsID_laser"), x=~x,y=~y, marker=list(size=3,color="rgba(120,255,120, 0.0)",line=list(width=1.5,color="rgba(120,255,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(20, 200, 20, 1)"))
+
+
+fig %>% add_trace(data=Sa2 %>% ungroup() %>% filter(JudgementType.f %in% c("Time"), PerformanceFeedback.f %in% c("Operation","Action")) %>% group_by(fittsID_laser) %>% summarise(duration=mean(duration_ms)), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 1.0)"),
+                  x=~fittsID_laser, y=~duration, type='scatter',mode='markers') %>%
+  add_trace(data=Sa2 %>% ungroup() %>% group_by(fittsID_laser), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~fittsID_laser, y=~duration_ms, type='scatter',mode='markers') %>%
+  add_trace(data=p_lin(Sa2 %>% filter(JudgementType.f %in% c("Time"), PerformanceFeedback.f %in% c("Operation","Action")), "duration_ms", "fittsID_laser"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(255, 120, 120, 1)")) %>%
+  add_trace(data=p_lin(Sa2 %>% filter(JudgementType.f %in% c("Speed","Distance"), PerformanceFeedback.f %in% c("Operation","Action")), "duration_ms", "fittsID_laser"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(20, 20, 20, 1)"))
+
+fig %>% add_trace(data=Sa2 %>% ungroup() %>% filter(JudgementType.f %in% c("Distance"), PerformanceFeedback.f %in% c("Operation","Action")) %>% group_by(fittsID_laser) %>% summarise(straightness=mean(straightness)), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 1.0)"),
+                  x=~fittsID_laser, y=~straightness, type='scatter',mode='markers') %>%
+  add_trace(data=Sa2 %>% ungroup() %>% group_by(fittsID_laser), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~fittsID_laser, y=~straightness, type='scatter',mode='markers') %>%
+  add_trace(data=p_lin(Sa2 %>% filter(JudgementType.f %in% c("Distance"), PerformanceFeedback.f %in% c("Operation","Action")), "straightness", "fittsID_laser"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(255, 120, 120, 1)")) %>%
+  add_trace(data=p_lin(Sa2 %>% filter(JudgementType.f %in% c("Time","Speed"), PerformanceFeedback.f %in% c("Operation","Action")), "straightness", "fittsID_laser"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(20, 20, 20, 1)"))
+
+fig %>% add_trace(data=Sa %>% ungroup() %>% filter(JudgementType.f %in% c("Distance")) %>% group_by(fittsID_laser) %>% summarise(travel_laser=mean(travel_laser)), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 1.0)"),
+                  x=~fittsID_laser, y=~travel_laser, type='scatter',mode='markers') %>%
+  add_trace(data=Sa %>% ungroup() %>% group_by(fittsID_laser), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~fittsID_laser, y=~travel_laser, type='scatter',mode='markers') %>%
+  add_trace(data=p_lin(Sa %>% filter(JudgementType.f %in% c("Distance")), "travel_laser", "fittsID_laser"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(255, 120, 120, 1)")) %>%
+  add_trace(data=p_lin(Sa %>% filter(JudgementType.f %in% c("Time","Speed")), "travel_laser", "fittsID_laser"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(20, 20, 20, 1)"))
+
+fig %>% add_trace(data=Sa %>% ungroup() %>% filter(JudgementType.f %in% c("Time")) %>% group_by(fittsID_laser) %>% summarise(duration=mean(duration_ms)), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 1.0)"),
+                  x=~fittsID_laser, y=~duration, type='scatter',mode='markers') %>%
+  add_trace(data=Sa %>% ungroup() %>% group_by(fittsID_laser), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~fittsID_laser, y=~duration_ms, type='scatter',mode='markers')
+
+fig %>% add_trace(data=Sa %>% ungroup() %>% filter(JudgementType.f %in% c("Time")) %>% group_by(fittsID.f) %>% summarise(duration=mean(duration_ms)), opacity=0.5, marker=list(size=10,color="rgba(60,60,60, 1.0)"),
+                  x=~fittsID, y=~duration, type='scatter',mode='markers+lines') %>%
+  add_trace(data=Sa, opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~fittsID, y=~duration_ms, type='scatter',mode='markers')
+
+
+fig %>% add_trace(data=Sa %>% ungroup() %>% filter(JudgementType.f %in% c("Time")) %>% group_by(hitnumber) %>% summarise(duration=mean(duration_ms / fittsID_laser)), opacity=0.5, marker=list(size=10,color="rgba(60,60,60, 1.0)"),
+                  x=~hitnumber, y=~duration, type='scatter',mode='markers+lines') %>%
+  add_trace(data=Sa %>% ungroup() %>% filter(JudgementType.f %in% c("Time")) %>% group_by(hitnumber), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~hitnumber, y=~duration_ms, type='scatter',mode='markers') %>%
+  add_trace(data=p_lin(Sa, "duration_ms", "hitnumber"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(255, 120, 120, 1)"))
+
+fig %>% add_trace(data=Sa %>% ungroup() %>% filter(`Performance Metric` %in% c("Distance")) %>% group_by(hitnumber) %>% summarise(straightness=mean(straightness / fittsID_laser)), opacity=0.5, marker=list(size=10,color="rgba(60,60,60, 1.0)"),
+                  x=~hitnumber, y=~straightness, type='scatter',mode='markers+lines') %>%
+  add_trace(data=Sa %>% ungroup() %>% group_by(hitnumber), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~hitnumber, y=~straightness, type='scatter',mode='markers') %>%
+  add_trace(data=p_lin(Sa, "straightness", "hitnumber"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(255, 120, 120, 1)"))
+
+fig %>% add_trace(data=Sa %>% ungroup() %>% group_by(hitnumber) %>% summarise(peakspeed=mean(peak_speed_smooth / fittsID_laser)), opacity=0.5, marker=list(size=10,color="rgba(60,60,60, 1.0)"),
+                  x=~hitnumber, y=~peakspeed, type='scatter',mode='markers+lines') %>%
+  add_trace(data=Sa %>% ungroup() %>% group_by(hitnumber), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~hitnumber, y=~peak_speed_smooth, type='scatter',mode='markers') %>%
+  add_trace(data=p_lin(Sa, "peak_speed_smooth", "hitnumber"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(255, 120, 120, 1)"))
+
+
+fig %>% add_trace(data=Sa %>% ungroup() %>% group_by(hitnumber) %>% summarise(throughput=mean(throughput)), opacity=0.5, marker=list(size=10,color="rgba(60,60,60, 1.0)"),
+                  x=~hitnumber, y=~throughput, type='scatter',mode='markers+lines') %>%
+  add_trace(data=Sa %>% ungroup() %>% group_by(hitnumber), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~hitnumber, y=~throughput, type='scatter',mode='markers') %>%
+  add_trace(data=p_lin(Sa, "throughput", "hitnumber"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(255, 120, 120, 1)"))
+
+fig %>% add_trace(data=Sc2 %>% filter(`Performance Metric` %in% c("Distance","Time")) %>% group_by(`Performance Feedback`) %>% summarise(peak_speed=mean(`Peak Speed (m/s)`)), opacity=0.5, marker=list(size=10,color="rgba(60,60,60, 1.0)"),
+                  x=~as.numeric(`Performance Feedback`), y=~peak_speed, type='scatter',mode='markers+lines') %>%
+  add_trace(data=Sc %>% filter(`Performance Metric` %in% c("Speed")) %>% group_by(`Performance Feedback`) %>% summarise(peak_speed=mean(`Peak Speed (m/s)`)), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~as.numeric(`Performance Feedback`), y=~`peak_speed`, type='scatter',mode='lines') %>%
+  add_trace(data=Sc %>% filter(`Performance Metric` %in% c("Speed")) %>% group_by(`Performance Feedback`), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~as.numeric(`Performance Feedback`), y=~`Peak Speed (m/s)`, type='scatter',mode='markers')
+
+# 4-5% for peak speed
+fig %>% add_trace(data=Sc2 %>% filter(`Performance Metric` %in% c("Distance","Time")) %>% group_by(`Performance Feedback`) %>% summarise(peak_speed=mean(`Peak Speed (m/s)`)), opacity=0.5, marker=list(size=10,color="rgba(60,60,60, 1.0)"),
+                  x=~as.numeric(`Performance Feedback`), y=~peak_speed, type='scatter',mode='markers+lines') %>%
+  add_trace(data=Sc %>% filter(`Performance Metric` %in% c("Speed")) %>% group_by(`Performance Feedback`) %>% summarise(peak_speed=mean(`Peak Speed (m/s)`)), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~as.numeric(`Performance Feedback`), y=~`peak_speed`, type='scatter',mode='lines') %>%
+        add_trace(data=Sc %>% filter(`Performance Metric` %in% c("Speed")) %>% group_by(`Performance Feedback`), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~as.numeric(`Performance Feedback`), y=~`Peak Speed (m/s)`, type='scatter',mode='markers')
+
+# 0-1% for straightness
+fig %>% add_trace(data=Sc2 %>% filter(`Performance Metric` %in% c("Speed","Time")) %>% group_by(`Performance Feedback`) %>% summarise(straightness=mean(`Straightness (0-1)`)), opacity=0.5, marker=list(size=10,color="rgba(60,60,60, 1.0)"),
+                  x=~as.numeric(`Performance Feedback`), y=~straightness, type='scatter',mode='markers+lines') %>%
+  add_trace(data=Sc %>% filter(`Performance Metric` %in% c("Distance")) %>% group_by(`Performance Feedback`) %>% summarise(straightness=mean(`Straightness (0-1)`)), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~as.numeric(`Performance Feedback`), y=~straightness, type='scatter',mode='lines') %>%
+  add_trace(data=Sc %>% filter(`Performance Metric` %in% c("Distance")) %>% group_by(`Performance Feedback`), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~as.numeric(`Performance Feedback`), y=~`Straightness (0-1)`, type='scatter',mode='markers')
+
+# 1-2% for movement speed
+fig %>% add_trace(data=Sc2 %>% filter(`Performance Metric` %in% c("Speed","Distance")) %>% group_by(`Performance Feedback`) %>% summarise(duration=mean(`Action Duration (ms)`)), opacity=0.5, marker=list(size=10,color="rgba(60,60,60, 1.0)"),
+                  x=~as.numeric(`Performance Feedback`), y=~duration, type='scatter',mode='markers+lines') %>%
+  add_trace(data=Sc %>% filter(`Performance Metric` %in% c("Time")) %>% group_by(`Performance Feedback`) %>% summarise(duration=mean(`Action Duration (ms)`)), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~as.numeric(`Performance Feedback`), y=~duration, type='scatter',mode='lines') %>%
+  add_trace(data=Sc %>% filter(`Performance Metric` %in% c("Time")) %>% group_by(`Performance Feedback`), opacity=0.5, marker=list(size=5,color="rgba(60,60,60, 0.5.0)"),
+            x=~as.numeric(`Performance Feedback`), y=~`Action Duration (ms)`, type='scatter',mode='markers')
+
+fig %>% add_trace(data=Sa, color=~Participant.f, opacity=0.5,
+                  x=~PerformanceFeedback, y=~peak_speed, type='scatter',mode='markers')
+
+fig %>% add_trace(data=Sa, color=~Participant.f, opacity=0.5,
+                  x=~time_start, y=~peak_speed, type='scatter',mode='markers') %>%
+  add_trace(data=p_lin(Sa, "peak_speed", "Timestamp"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(120, 120, 120, 1)"))
+
+fig %>% add_trace(data=Sa, color=~Participant.f, opacity=0.5,
+                  x=~HitOrder, y=~straightness, type='scatter',mode='markers') %>%
+  add_trace(data=p_lin(Sa, "straightness", "HitOrder"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(120, 120, 120, 1)"))
+
+fig %>% add_trace(data=Sa, color=~Participant.f, opacity=0.5,
+                  x=~HitOrder, y=~duration_ms, type='scatter',mode='markers') %>%
+  add_trace(data=p_lin(Sa, "duration_ms", "HitOrder"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(120, 120, 120, 1)"))
+
+fig %>% add_trace(data=Sc %>% filter(`Performance Metric` %in% c("Speed")) %>% group_by(Participant.f), opacity=0.5, marker=list(size=7,color="rgba(60,60,60, 1.0)"),
+                  text=~paste(`Performance Feedback`), x=~as.numeric(`Performance Feedback`), y=~`Peak Speed (m/s)`, type='scatter',mode='markers+lines') %>%
+        add_trace(data=p_lin(Sc %>% filter(`Performance Metric` %in% c("Speed")), "Peak Speed (m/s)", "Performance Feedback"), 
+                  x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(255, 120, 120, 1)"))
+
+fig %>% add_trace(data=Sc %>% filter(`Performance Metric` %in% c("Time")) %>% group_by(Participant.f), opacity=0.5, marker=list(size=7,color="rgba(60,60,60, 1.0)"),
+                  text=~paste(`Performance Feedback`), x=~as.numeric(`Performance Feedback`), y=~`Action Duration (ms)`, type='scatter',mode='markers+lines') %>%
+  add_trace(data=p_lin(Sc %>% filter(`Performance Metric` %in% c("Time")), "Action Duration (ms)", "Performance Feedback"), 
+            x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
+            type='scatter',mode='lines+markers',color=I("rgba(255, 120, 120, 1)"))
+
+
+fig %>% add_trace(data=Scm %>% filter(JudgementType.f %in% c("Speed")), opacity=0.5, marker=list(size=15,color="rgba(60,60,60, 1.0)"),
+                  x=~Participant.f, y=~`Peak Speed (m/s)`, type='scatter',mode='markers') %>%
+        add_trace(data=Scm %>% filter(JudgementType.f %in% c("Time","Distance")), opacity=0.5, marker=list(size=7,color="rgba(120,120,120, 1.0)"),
+            x=~Participant.f, y=~`Peak Speed (m/s)`, type='scatter',mode='markers') %>%
+  add_trace(data=Scm %>% group_by(Participant.f) %>% filter(JudgementType.f %in% c("Time","Distance", "Speed")), opacity=0.5, marker=list(size=5,color="rgba(120,120,120, 0.0)"),
+            color=I("rgba(120, 120, 120, 1)"), x=~Participant.f, y=~`Peak Speed (m/s)`, type='scatter',mode='lines')
+
+fig %>% add_trace(data=Scm %>% filter(JudgementType.f %in% c("Time")), opacity=0.5, marker=list(size=20,color="rgba(120,120,120, 1.0)"),
+                  x=~Participant.f, y=~`Action Duration (ms)`, type='scatter',mode='markers') %>%
+  add_trace(data=Scm %>% filter(JudgementType.f %in% c("Speed","Distance")), opacity=0.5, marker=list(size=10,color="rgba(120,120,120, 1.0)"),
+            x=~Participant.f, y=~`Action Duration (ms)`, type='scatter',mode='markers') %>%
+  add_trace(data=Scm %>% group_by(Participant.f) %>% filter(JudgementType.f %in% c("Time","Distance", "Speed")), opacity=0.5, marker=list(size=5,color="rgba(120,120,120, 0.0)"),
+            color=I("rgba(120, 120, 120, 1)"), x=~Participant.f, y=~`Action Duration (ms)`, type='scatter',mode='lines')
+
+Scm = Scm %>% group_by(Participant.f) %>% select(Participant.f,`Peak Speed (m/s)`, JudgementType.f) %>%
+  filter(JudgementType.f == "Speed") %>%
+  summarise(peak_speed_rel = `Peak Speed (m/s)`) %>% right_join(Scm)
+
+Scm = Scm %>% group_by(Participant.f) %>% select(Participant.f,`Peak Speed (m/s)`, JudgementType.f) %>%
+  filter(JudgementType.f == "Speed") %>%
+  summarise(peak_speed_avg = `Peak Speed (m/s)`) %>% right_join(Scm)
+
+Scm = Scm %>% group_by(Participant.f) %>% select(Participant.f,`Straightness (0-1)`, JudgementType.f) %>%
+  filter(JudgementType.f == "Distance") %>%
+  summarise(straightness_rel = `Straightness (0-1)`) %>% right_join(Scm)
+
+Scm = Scm %>% group_by(Participant.f) %>% select(Participant.f,`Action Duration (ms)`, JudgementType.f) %>%
+  filter(JudgementType.f == "Time") %>%
+  summarise(duration_rel = `Action Duration (ms)`) %>% right_join(Scm)
+
+fig %>% add_trace(data=Scm %>% filter(JudgementType.f %in% c("Speed")), opacity=0.5, marker=list(size=20,color="rgba(120,120,120, 1.0)"),
+                  x=~Participant.f, y=~100, type='scatter',mode='markers') %>%
+  add_trace(data=Scm %>% filter(JudgementType.f %in% c("Time","Distance")), opacity=0.5, marker=list(size=10,color="rgba(120,120,120, 1.0)"),
+            x=~Participant.f, y=~(`Peak Speed (m/s)`/peak_speed_rel)*100, type='scatter',mode='markers')
+
+Scm %>% mutate(improve =  straightness_rel / `Straightness (0-1)`) %>% view()
+Scm %>% mutate(improve =  peak_speed_rel / `Peak Speed (m/s)`) %>% view()
+Scm %>% mutate(improve =  duration_rel / `Action Duration (ms)`) %>% view()
+
+Scm %>% mutate(improve =  peak_speed_rel / `Peak Speed (m/s)`) %>% summarise(sdimprove = sd(improve))
+Scm %>% mutate(improve =  duration_rel / `Action Duration (ms)`) %>% summarise(sdimprove = sd(improve))
+Scm %>% mutate(improve =  peak_speed_rel / `Peak Speed (m/s)`) %>% summarise(meanimprove = mean(improve))
 
 ###
 # Dashboard prototyping
