@@ -1,3 +1,4 @@
+library(MASS)
 library(plotly)  # load plotly first to avoid it overriding mutate!
 library(sf)
 library(stats)
@@ -261,6 +262,7 @@ Sa = Sa %>% ungroup() %>% group_by(Participant, PerformanceFeedback) %>%
          PlayOrderFB = PlayOrderFB - min(PlayOrderFB),
          ActionOrderFB = ActionOrder-min(ActionOrder))
 
+
 ###
 # Remove First Five Actions Where Feedback System Gets Calibrated
 ###
@@ -387,6 +389,10 @@ Sc = Sc %>% ungroup() %>%
 fig %>% add_trace(data=Sc %>% group_by(`Performance Feedback`), x=~PlayOrderFB, y=~`Peak Speed (m/s)`, mode='markers',type='scatter') %>%
   add_trace(data=p_lin(Sc, "Peak Speed (m/s)", "PlayOrderFB"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
             type='scatter',mode='lines+markers',color=I("rgba(120, 120, 120, 1)"))
+
+fig %>% add_trace(data=Sc %>% filter(`Performance Metric` == "Speed") %>% 
+                    group_by(`Performance Feedback`) %>% summarise(y = mean(`Peak Speed (m/s)`))
+                  , x=~`Performance Feedback`, y=~y, mode='markers',type='scatter')
   
 fm <- lm(`Action Duration (ms)` ~ PlayOrderFB, data = Sc)
 fm <- lm(`Peak Speed (m/s)` ~ PlayOrderFB, data = Sc) # 4%
@@ -590,8 +596,56 @@ Spl = Sa %>% group_by(Participant,PlayOrder) %>%
 #  rename("Participant" = "Participant_reg")
 
 ###
+# Calculating Medians, IQRs and Means for reporting in paper.
+###
+
+# Correspondence
+Sc %>% group_by(`Performance Metric`) %>% summarise(med = median(as.numeric(Correspondence)), IQR= IQR(as.numeric(Correspondence)))
+
+# Noticing
+Scf %>% group_by(`PerformanceFeedback.f`) %>% summarise(mean = mean(as.numeric(Notice)), med = median(as.numeric(Notice)), IQR= IQR(as.numeric(Notice)))
+
+# Contrast
+Scf %>% group_by(`PerformanceFeedback.f`) %>% summarise(mean = mean(as.numeric(`Sensing Algorithm`)), med = median(as.numeric(`Sensing Algorithm`)), IQR= IQR(as.numeric(`Sensing Algorithm`)))
+
+# Comprehension
+Scf %>% group_by(`PerformanceFeedback.f`) %>% summarise(mean = mean(as.numeric(`Assess Performance`)), med = median(as.numeric(`Assess Performance`)), IQR= IQR(as.numeric(`Assess Performance`)))
+
+# Help Quantity
+Scf %>% group_by(`PerformanceFeedback.f`) %>% summarise(mean = mean(as.numeric(`Quantity`)), med = median(as.numeric(`Quantity`)), IQR= IQR(as.numeric(`Quantity`)))
+
+# Help Quality
+Scf %>% group_by(`PerformanceFeedback.f`) %>% summarise(mean = mean(as.numeric(`Quality`)), med = median(as.numeric(`Quality`)), IQR= IQR(as.numeric(`Quality`)))
+
+# Encouragement
+Scf %>% group_by(`PerformanceFeedback.f`) %>% summarise(mean = mean(as.numeric(`Encouragement`)), med = median(as.numeric(`Encouragement`)), IQR= IQR(as.numeric(`Encouragement`)))
+
+# Distraction
+Scf %>% group_by(`PerformanceFeedback.f`) %>% summarise(mean = mean(as.numeric(`Distraction`)), med = median(as.numeric(`Distraction`)), IQR= IQR(as.numeric(`Distraction`)))
+
+###
 # Calculating Performance cost/proficiency
 ###
+
+conf_interval <- function(df, plabel, measlabel,treatlabel1, treatlabel2, control1, control2) {
+  #browser()
+  dataset = data.frame(measurement = df[[measlabel]],
+                       treat1 = df[[treatlabel1]],
+                       treat2 = df[[treatlabel2]],
+                       participant = df[[plabel]])
+  
+  # confidence intervals
+  conf = dataset %>%
+    group_by(participant,treat2) %>%
+    summarise(measurement = mean(measurement)) %>%
+    group_by(treat2) %>%
+    summarise(mean.y = mean(measurement, na.rm = TRUE),
+              sd.y = sd(measurement, na.rm = TRUE),
+              n.y = n()) %>%
+    mutate(se.y = sd.y / sqrt(n.y),
+           lower.ci.y = mean.y - qt(1 - (0.05 / 2), n.y - 1) * se.y,
+           upper.ci.y = mean.y + qt(1 - (0.05 / 2), n.y - 1) * se.y)
+}
 
 non_straight = Sc %>% group_by(`Performance Feedback`) %>% filter(`Performance Metric` %in% c("Speed","Time")) %>%
   summarise(nondistance_straightness = mean(`Straightness (0-1)`))
@@ -741,10 +795,54 @@ Sa %>% group_by(JudgementType.f) %>% summarise(
 )
 
 ###
-# Bartlett's Spherity test
+# Bartlett's Spherity test - Likert Scale Variables
 ###
 
-psych::KMO(Spf %>% select(-PerformanceFeedback.f) %>% mutate(across(everything(), ~ as.numeric(.x))))
+# https://www.statology.org/bartletts-test-of-sphericity/
+Spf_cor = Spf %>% select(-PerformanceFeedback.f) %>% mutate(across(everything(), ~ as.numeric(.x)))
+cor_matrix = cor(Spf_cor)
+
+# just curious whether transformed normal variables made a difference - it doesnt (still significant)
+Sc_cor = Sc %>% ungroup() %>% select(`Participant.f`,`T_Action Arm Travel (meter)`,`T_Action Duration (ms)`,`T_Straightness (0-1)`,`T_Peak Speed (m/s)`,`T_Peak Speed to Target (\\%)`,`T_Time to Peak Speed (ms)`) %>% mutate(across(everything(), ~ as.numeric(.x))) %>% as.data.frame()
+cor_matrix = cor(Sc_cor)
+
+
+psych::cortest.bartlett(cor_matrix, n = nrow(Sc_cor))
+
+# Bartletts test of sphericity indicated that the sphericity assumption is violated.
+
+# We tested normality - the Likert scale variables did not follow a normal distribution.
+# For Likert Scale variables, we must resort to Aligned Rank Transform ANOVA.
+
+
+
+# (KMO should not be relevant, if we just want to know whether we adhere to sphericity and normality)
+
+# "KMO assesses the overall sampling adequacy of your data for factor analysis, while Bartlett’s Test 
+# checks whether the variables in your dataset are correlated enough to proceed with factor analysis. "
+# https://datapott.com/kaiser-meyer-olkin-kmo-and-bartletts-test-of-sphericity-in-spss/
+
+# KMO also expects a correlation matrix, see ?KMO Thurstone dataset
+psych::KMO(cor_matrix)
+# KMO indicated that for most variables except distraction (<0.49 = unacceptable), sampling was adequate to perform factor analysis.
+
+
+
+###
+# Bartlett's Spherity test - Quantitative Measurements
+###
+# Todo: Am I using the correct datasets? 
+
+
+Spl_cor = Spl %>% mutate(across(everything(), ~ as.numeric(.x))) %>% ungroup() %>% select(PlayOrder,Participant,`Straightness (0-1)`,Throughput, `Action Duration (ms)`) %>% as.data.frame()
+cor_matrix = cor(Spl_cor)
+
+psych::cortest.bartlett(cor_matrix, n = nrow(Spl_cor))
+
+
+# What variables are relevant for the sphericity test?
+# All dependent variables e.g.
+# 
 
 psych::cortest.bartlett(Spf %>% select(-PerformanceFeedback.f) %>% mutate(across(everything(), ~ as.numeric(.x))))
 
@@ -764,8 +862,13 @@ print(efa_result$loadings,cutoff = 0.3)
 psych::fa.diagram(efa_result) 
 
 ###
-# Bartlett's Spherity test
+# Aligned Rank Transform ANOVA: Likert Scales
 ###
+
+
+
+
+
 
 ###
 # Plots of self-report scales
@@ -825,6 +928,7 @@ orca(fig_c, "fig/condition_feedbackDistract_violin.pdf", width=285, height=325)
 
 # Friedman test
 tables_friedman <- function(df, measlabel, treatlabel, plabel) {
+  #browser()
   dataset = data.frame(measurement = df[[measlabel]],
                   treatment = df[[treatlabel]],
                   participant = df[[plabel]])
@@ -839,6 +943,8 @@ dataset_measurement = dataset %>% group_by(treatment) %>% summarise(
 
 s1 = paste(colnames(dataset_measurement), collapse=" & ")
 s2 = paste(dataset_measurement %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ ")
+
+s6 = dataset %>% rstatix::friedman_effsize(measurement ~ treatment | participant)
 
 dataset_measurement_stat <- data.frame(
   `chisquared` =  result$statistic,
@@ -873,7 +979,7 @@ pvalues = as.data.frame(conover_result$p.value) %>%
 s5 = paste(colnames(pvalues), collapse=" & ")
 writeLines(paste(pvalues %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "), "table.txt")
 
-return(list(result, conover_result, s1,s2,s3,s4,s5))
+return(list(result, conover_result, s1,s2,s3,s4,s5,s6))
 }
 
 #condition-wise: correspondence
@@ -891,13 +997,121 @@ tables_friedman(Scf, "Quality","Performance Feedback","Participant")
 tables_friedman(Scf, "Quantity","Performance Feedback","Participant")
 tables_friedman(Scf, "Overall Feel","Performance Feedback","Participant")
 
-# Todo: Test Overall Preference
+# Friedman effect size
+#  W = X2/N(K-1)
+# X2 = friedman test statistic value
+# N = sample size
+# k = number of measurements per subject
+# 
+Scf %>% 
+
+
 
 ###
 # Pre-test filtering
 ###
 
-# 1) 
+# 1) Shapiro-Wilk normality test of quantiative measures.
+# If the normality test is significant, the measure is NOT normal.
+
+shapiro.test(Sc$`Action Duration (ms)`) # not normal
+shapiro.test(Sc$`Action Arm Travel (meter)`) # not normal
+shapiro.test(Sc$`Peak Speed (m/s)`) # not normal
+shapiro.test(Sc$`Peak Speed to Target (\\%)`) # not normal
+shapiro.test(Sc$`Time to Peak Speed (ms)`) # not normal
+shapiro.test(Sc$`Straightness (0-1)`) # not normal
+shapiro.test(Sc$`Throughput (bits/s)`) # normal (??)
+
+#log - time to peak speed is normal
+shapiro.test(log(Sc$`Action Duration (ms)`)) 
+shapiro.test(log(Sc$`Action Arm Travel (meter)`)) 
+shapiro.test(log(Sc$`Peak Speed (m/s)`)) 
+shapiro.test(log(Sc$`Peak Speed to Target (\\%)`)) 
+shapiro.test(log(Sc$`Time to Peak Speed (ms)`)) 
+shapiro.test(log(Sc$`Straightness (0-1)`)) 
+shapiro.test(log(Sc$`Throughput (bits/s)`)) 
+
+# sqrt - none
+shapiro.test(sqrt(Sc$`Action Duration (ms)`)) 
+shapiro.test(sqrt(Sc$`Action Arm Travel (meter)`)) 
+shapiro.test(sqrt(Sc$`Peak Speed (m/s)`)) 
+shapiro.test(sqrt(Sc$`Peak Speed to Target (\\%)`)) 
+shapiro.test(sqrt(Sc$`Time to Peak Speed (ms)`)) 
+shapiro.test(sqrt(Sc$`Straightness (0-1)`)) 
+shapiro.test(sqrt(Sc$`Throughput (bits/s)`)) 
+
+
+# If the estimated transformation parameter is close to one of the values of the previous table,
+# in the practice it is recommended to pick up the value of the table instead of the exact value, 
+# as the value from the table is easier to interpret.
+
+# -2  1/x^2
+# -1  1/x
+# -0.5 1/sqrt(x)
+# 0 log(x)
+# 0.5 sqrt(x)
+# 1 no transformation 
+# 2 x^2
+# # https://r-coder.com/box-cox-transformation-r/
+
+boxcox_results <- boxcox(lm(Sc$`Action Duration (ms)` ~ 1))
+lambda_opt <- boxcox_results$x[which.max(boxcox_results$y)]
+print(lambda_opt)
+# -0.5
+# Action Duration - we use 1/sqrt(x)
+#transformed_data <- ((Sc$`Action Duration (ms)`^-0.5 - 1) / -0.5)
+transformed_data <- 1/sqrt(Sc$`Action Duration (ms)`)
+shapiro.test(transformed_data) 
+Sc$`T_Action Duration (ms)` = transformed_data
+
+#Action Arm Travel (meter) - we use 1/x^2
+boxcox_results <- boxcox(lm(Sc$`Action Arm Travel (meter)` ~ 1))
+lambda_opt <- boxcox_results$x[which.max(boxcox_results$y)]
+print(lambda_opt)
+transformed_data <- 1/(Sc$`Action Arm Travel (meter)`)^2
+shapiro.test(transformed_data) 
+Sc$`T_Action Arm Travel (meter)` = transformed_data
+
+# Peak Speed (m/s) - we use logarithm
+boxcox_results <- boxcox(lm(Sc$`Peak Speed (m/s)` ~ 1))
+lambda_opt <- boxcox_results$x[which.max(boxcox_results$y)]
+print(lambda_opt)
+transformed_data <- log(Sc$`Peak Speed (m/s)`)
+shapiro.test(transformed_data) 
+Sc$`T_Peak Speed (m/s)` = transformed_data
+
+# Peak Speed to Target - we use x^2
+boxcox_results <- boxcox(lm(Sc$`Peak Speed to Target (\\%)` ~ 1))
+lambda_opt <- boxcox_results$x[which.max(boxcox_results$y)]
+print(lambda_opt)
+transformed_data <- Sc$`Peak Speed to Target (\\%)`^2
+shapiro.test(transformed_data)
+Sc$`T_Peak Speed to Target (\\%)` = transformed_data
+
+# Time to Peak Speed (ms) - we use log(x)
+boxcox_results <- boxcox(lm(Sc$`Time to Peak Speed (ms)` ~ 1))
+lambda_opt <- boxcox_results$x[which.max(boxcox_results$y)]
+print(lambda_opt)
+transformed_data <- log(Sc$`Time to Peak Speed (ms)`)
+shapiro.test(transformed_data) 
+Sc$`T_Time to Peak Speed (ms)` = transformed_data
+
+# Straightness - we use x^2
+boxcox_results <- boxcox(lm(Sc$`Straightness (0-1)` ~ 1))
+lambda_opt <- boxcox_results$x[which.max(boxcox_results$y)]
+print(lambda_opt)
+transformed_data <- Sc$`Straightness (0-1)`^2
+shapiro.test(transformed_data) 
+Sc$`T_Straightness (0-1)` = transformed_data
+
+# Throughput - we use just x
+boxcox_results <- boxcox(lm(Sc$`Throughput (bits/s)` ~ 1))
+lambda_opt <- boxcox_results$x[which.max(boxcox_results$y)]
+print(lambda_opt)
+transformed_data <- Sc$`Throughput (bits/s)`
+shapiro.test(transformed_data) 
+Sc$`T_Throughput (bits/s)` = transformed_data
+
 
 ###
 # Simple mode: Repeated Measures Multivariate Anova
@@ -914,9 +1128,33 @@ tables_rmanova <- function(df, plabel, measlabel,treatlabel1, treatlabel2, contr
                        treat2 = df[[treatlabel2]],
                        participant = df[[plabel]])
   
-  aov_result <- aov_ez(id="participant", dv="measurement", dataset, within = c("treat2")) #treat1 is performance feedback, but we dont 
+  aov_result <- aov_ez(id="participant", dv="measurement", dataset, within = c("treat1","treat2")) #treat1 is performance feedback, but we dont 
   aov_summary = summary(aov_result, effect_size ="partial")
+  # Show ANOVA table with Huynh–Feldt correction
+  hf_tab <- afex::nice(aov_result, correction = "HF", es = "ges", observed = NULL)
   
+  hf_nums <- hf_tab %>% as.data.frame()
+  names(hf_nums) <- NULL
+  hf_table = tibble(colnames = names(hf_tab[1,]),
+                    colvals = c(hf_nums[1,]),
+                    Variable = hf_nums[1,1])
+  hf_table = tibble(colnames = names(hf_tab[2,]),
+                    colvals = c(hf_nums[2,]),
+                    Variable = hf_nums[2,1]) %>% bind_rows(hf_table)
+  hf_table = tibble(colnames = names(hf_tab[3,]),
+                    colvals = c(hf_nums[3,]),
+                    Variable = hf_nums[3,1]) %>% bind_rows(hf_table)
+  
+  hf_table = hf_table %>% pivot_wider(names_from="colnames", values_from="colvals") %>% dplyr::select(-Variable)
+  
+  hf_table = hf_table %>% rename(Df = df, Variable = Effect, Effect = ges, p = p.value)
+  
+  hf_table = hf_table %>% 
+    mutate(`p` = ifelse(p == "<.001", "0", p),
+           p_num = as.numeric(p),
+           p = format(round(p_num,3), nsmall = 3),
+           `p` = ifelse(p == "0.000", "$<$0.001", p),
+           `p` = ifelse(p_num < 0.05, paste0(p,"*"),p)) %>% select(-p_num)
   
   aov_table = tibble(
     colnames = names(aov_summary[[4]][1,]),
@@ -953,8 +1191,11 @@ tables_rmanova <- function(df, plabel, measlabel,treatlabel1, treatlabel2, contr
   s1 = paste(colnames(aov_table), collapse=" & ")
   s2 = paste(aov_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\ ")
   
+  s4 = paste(colnames(hf_table), collapse=" & ")
+  s5 = paste(hf_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\ ")
+  
   # Obtain estimated marginal means
-  emm <- emmeans(aov_result, ~ treat1:treat2)
+  emm <- emmeans(aov_result, ~ treat2)
   
   # Perform pairwise comparisons with Bonferroni adjustment
   pairwise_comparisons <- pairs(emm, adjust = "bonferroni")
@@ -971,12 +1212,25 @@ tables_rmanova <- function(df, plabel, measlabel,treatlabel1, treatlabel2, contr
   
   s3 = paste(colnames(pairwisedf), collapse=" & ")
   writeLines(paste(pairwisedf %>% arrange(`p-value`) %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "), "table.txt")
-  return(list(s1,s2,s3))
+  return(list(s1,s2,s3,s4,s5, conf))
 }
 
-aov_ez(id="Participant.f", dv="straightness_pct", within = c("JudgementType"), data=Sa)
+tables_rmanova(Sc, "Participant.f", "T_Action Arm Travel (meter)","Performance Feedback","Performance Metric") 
+tables_rmanova(Sc, "Participant.f", "T_Action Duration (ms)","Performance Feedback", "Performance Metric") 
+tables_rmanova(Sc, "Participant.f", "T_Straightness (0-1)","Performance Feedback","Performance Metric")
+tables_rmanova(Sc, "Participant.f", "T_Peak Speed (m/s)","Performance Feedback","Performance Metric") 
+tables_rmanova(Sc, "Participant.f", "T_Time to Peak Speed (ms)","Performance Feedback","Performance Metric")
+tables_rmanova(Sc, "Participant.f", "T_Peak Speed to Target (\\%)","Performance Feedback","Performance Metric")
 
-tables_rmanova(Sa, "Participant.f", "duration_ms","PerformanceFeedback", "JudgementType") 
+
+tables_rmanova(Sc, "Participant.f", "T_Throughput (bits/s)","Performance Feedback","Performance Metric")
+
+
+
+
+#tables_rmanova(Sc, "Participant.f", "Correspondence","Performance Feedback","Performance Metric")
+
+
 tables_rmanova(Sa, "Participant.f", "travel_arm","PerformanceFeedback", "JudgementType") 
 tables_rmanova(Sa, "Participant.f", "peak_speed_smooth","PerformanceFeedback", "JudgementType") 
 tables_rmanova(Sa, "Participant.f", "peak_speed_smooth_to_target_pct","PerformanceFeedback", "JudgementType")
@@ -994,6 +1248,25 @@ tables_rmanova_single <- function(df, plabel, measlabel,treatlabel1) {
   
   aov_result <- aov_ez(id="participant", dv="measurement", dataset, within = c("treat1"))
   aov_summary = summary(aov_result)
+  
+  # Show ANOVA table with Huynh–Feldt correction
+  hf_tab <- afex::nice(aov_result, correction = "HF", es = "ges", observed = NULL)
+  
+  hf_nums <- hf_tab %>% as.data.frame()
+  names(hf_nums) <- NULL
+  hf_table = tibble(colnames = names(hf_tab),
+                    colvals = c(hf_nums))
+  
+  hf_table = hf_table %>% pivot_wider(names_from="colnames", values_from="colvals")
+  
+  hf_table = hf_table %>% rename(Df = df, Variable = Effect, Effect = ges, p = p.value)
+  
+  hf_table = hf_table %>% 
+    mutate(`p` = ifelse(p == "<.001", "0", p),
+           p_num = as.numeric(p),
+           p = format(round(p_num,3), nsmall = 3),
+           `p` = ifelse(p == "0.000", "$<$0.001", p),
+           `p` = ifelse(p_num < 0.05, paste0(p,"*"),p)) %>% select(-p_num)
   
   aov_table = tibble(
     colnames = names(aov_summary[[4]][1,]),
@@ -1025,10 +1298,13 @@ tables_rmanova_single <- function(df, plabel, measlabel,treatlabel1) {
   aov_table = aov_table %>% mutate(across(all_of(c("SS","F")), ~ format(round(.x,2), nsmall = 2))) %>%
     mutate(`p-value` = format(round(p,3), nsmall = 3),
            `p-value` = ifelse(`p-value` == "0.000", "$<$0.001", `p-value`),
-           `p-value` = ifelse(p < 0.05, paste0(`p-value`,"*"),`p-value`)) %>% select(-p)
+           `p-value` = ifelse(`p` < 0.05, paste0(`p-value`,"*"),`p-value`)) %>% select(-p)
   
   s1 = paste(colnames(aov_table), collapse=" & ")
   s2 = paste(aov_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\ ")
+  
+  s4 = paste(colnames(hf_table), collapse=" & ")
+  s5 = paste(hf_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\ ")
   
   # Obtain estimated marginal means
   emm <- emmeans(aov_result, ~ treat1)
@@ -1048,7 +1324,7 @@ tables_rmanova_single <- function(df, plabel, measlabel,treatlabel1) {
   
   s3 = paste(colnames(pairwisedf), collapse=" & ")
   writeLines(paste(pairwisedf %>% arrange(`p-value`) %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "), "table.txt")
-  return(list(s1,s2,s3))
+  return(list(s1,s2,s3,s4,s5, conf))
 }
 
 tables_rmanova_single(Scm, "Participant.f", "Action Duration (ms)","JudgementType.f") 
@@ -1456,11 +1732,17 @@ plot_bar <- function(dataset, xlabel, ylabel, desc,xtitle,ytitle,miny,maxy,lwidt
     add_trace(data=df,
               x=~x, y=~mean.y, color=I("grey"), #barmode='group', colors = c("lightgrey", "darkgrey", "grey"),
               error_y=~list(symmetric=FALSE, array=upper.ci.y - mean.y, arrayminus=mean.y-lower.ci.y, color = '#000000'), type='bar') %>%
+    add_trace(data=df,
+              x=~x, y=~(upper.ci.y), color=I("black"), type='scatter', mode = 'text', text = ~paste0(format(round(upper.ci.y,0), nsmall = 0),'  '), textposition = 'middle left',
+              textfont = list(color = I("black"), size = 15)) %>%
+    add_trace(data=df,
+              x=~x, y=~(lower.ci.y), color=I("black"), type='scatter', mode = 'text', text = ~paste0(format(round(lower.ci.y,0), nsmall = 0),'  '), textposition = 'middle left',
+              textfont = list(color = I("black"), size = 15)) %>%
     layout(margin=list(l=55,r=0,t=55,b=0),title=list(font=list(size=15), xanchor="center", xref="paper",
                                                      text=desc), showlegend=F,
            xaxis=list(linewidth=lwidth, range=c(-0.45,~length(unique(x)) - 0.45), title=xtitle, zeroline=F, tickfont=list(size=15)),
            yaxis=list(linewidth=lwidth, range=c(miny,maxy), title=ytitle, zeroline=F, tickfont=list(size=15), showticklabels=T))
-  
+  fig_c
   if (overlay != "") {
     svg_file_path = paste0('fig/',overlay)
     svg_file <- readBin(svg_file_path, what="raw",n = file.info(svg_file_path)$size)
@@ -1638,28 +1920,30 @@ plot_playorder <- function(dataset, ylabel, xlabel = "PlayOrder", plabel="Partic
                      x = x2,
                      x2 = NULL)
   
-  df = df %>% arrange(pid,x) %>% group_by(x) %>%
+  df2 = df %>% arrange(pid,x) %>% group_by(x) %>%
     summarise(y = mean(y))
 
 fig %>%
-  add_trace(data=df, x=~x, 
+  add_trace(data=df2, x=~x, 
             y=~y,
             marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
             type='scatter',mode='lines+markers',color=I("rgba(120, 120, 120, 1)")) %>%
-  add_trace(data=p_lin(df, "y", "x"), x=~x,y=~y, marker=list(size=3,color="rgba(120,120,120, 0.0)",line=list(width=1.5,color="rgba(120,120,120, 0.0)")),
-            type='scatter',mode='lines+markers',color=I("rgba(120, 120, 120, 1)")) %>%
+  add_trace(data=df, x=~jitter(x,0.5), 
+            y=~y,
+            marker=list(size=9,color="rgba(120,120,120, 0.25)"),
+            type='scatter',mode='markers',color=I("rgba(120, 120, 120, 1)")) %>%
   layout(margin=list(l=55,r=0,t=55,b=0),title=list(font=list(size=15), xanchor="center", xref="paper",
-                                                   text=p_lin_coef(df, "y", "x")), showlegend=T,
-         xaxis=list(title=' ', zeroline=F, tickfont=list(size=15)),
+                                                   text=' '), showlegend=T,
+         xaxis=list(title=ylabel, zeroline=T, tickfont=list(size=15)),
          yaxis=list(title=' ', zeroline=F, tickfont=list(size=15), showticklabels=T))
 }
-plot_playorder(Spl,"Throughput")
-plot_playorder(Spl,"Action Duration (ms)")
-plot_playorder(Spl,"Action Arm Travel (meter)")
-plot_playorder(Spl,"Straightness (0-1)")
-plot_playorder(Spl,"Peak Speed (m/s)")
-plot_playorder(Spl,"Time to Peak Speed (ms)")
-plot_playorder(Spl,"Peak Speed to Target (\\%)")
+subplot( plot_playorder(Spl,"Throughput"),
+plot_playorder(Spl,"Action Duration (ms)"),
+plot_playorder(Spl,"Action Arm Travel (meter)"),
+plot_playorder(Spl,"Straightness (0-1)"),
+plot_playorder(Spl,"Peak Speed (m/s)"),
+plot_playorder(Spl,"Time to Peak Speed (ms)"),
+plot_playorder(Spl,"Peak Speed to Target (\\%)"))
 
 
 
@@ -2130,6 +2414,8 @@ Sc2 = Sa2 %>% group_by(Participant, FeedbackJudge.f) %>%
 
 
 
+
+
 fig %>% add_trace(data=Sa2 %>% ungroup() %>% filter(PerformanceFeedback.f %in% c("Operation")) %>% group_by(fittsID_laser) %>% summarise(peak_speed=mean(peak_speed_smooth)), opacity=0.95, marker=list(size=5,color="rgba(255,0,0, 1.0)"),
                   x=~fittsID_laser, y=~peak_speed, type='scatter',mode='markers') %>%
   add_trace(data=Sa2 %>% ungroup() %>% filter(PerformanceFeedback.f %in% c("Action")) %>% group_by(fittsID_laser) %>% summarise(peak_speed=mean(peak_speed_smooth)), opacity=0.95, marker=list(size=5,color="rgba(0,0,255, 1.0)"),
@@ -2300,6 +2586,9 @@ fig %>% add_trace(data=Scm %>% filter(JudgementType.f %in% c("Time")), opacity=0
   add_trace(data=Scm %>% group_by(Participant.f) %>% filter(JudgementType.f %in% c("Time","Distance", "Speed")), opacity=0.5, marker=list(size=5,color="rgba(120,120,120, 0.0)"),
             color=I("rgba(120, 120, 120, 1)"), x=~Participant.f, y=~`Action Duration (ms)`, type='scatter',mode='lines')
 
+
+
+
 Scm = Scm %>% group_by(Participant.f) %>% select(Participant.f,`Peak Speed (m/s)`, JudgementType.f) %>%
   filter(JudgementType.f == "Speed") %>%
   summarise(peak_speed_rel = `Peak Speed (m/s)`) %>% right_join(Scm)
@@ -2328,6 +2617,22 @@ Scm %>% mutate(improve =  duration_rel / `Action Duration (ms)`) %>% view()
 Scm %>% mutate(improve =  peak_speed_rel / `Peak Speed (m/s)`) %>% summarise(sdimprove = sd(improve))
 Scm %>% mutate(improve =  duration_rel / `Action Duration (ms)`) %>% summarise(sdimprove = sd(improve))
 Scm %>% mutate(improve =  peak_speed_rel / `Peak Speed (m/s)`) %>% summarise(meanimprove = mean(improve))
+
+Scm_time = Scm %>% filter(JudgementType.f == "Time") %>% mutate(adaption = time_adaption)
+Scm_speed = Scm %>% filter(JudgementType.f == "Speed") %>% mutate(adaption = speed_adaption)
+
+
+indifig = fig %>% add_trace(data=Scm %>% filter(JudgementType.f == "Time"), x=~Participant, y =~(time_adaption-1)*100, type = 'bar',
+                          marker = list(color = '#9ad0e1ff')) %>%
+  add_trace(data=Scm %>% filter(JudgementType.f == "Speed"), x=~Participant, y =~(speed_adaption-1)*100, type = 'bar',
+            marker = list(color = '#5c97d8ff')) %>%
+  add_trace(data=Scm %>% filter(JudgementType.f == "Distance"), x=~Participant, y =~(distance_adaption-1)*100, type = 'bar',
+            marker = list(color = '#2d5aafff')) %>%
+  layout(barmode='group', showlegend=T,
+         xaxis=list(title=' ',zeroline=F,showtitle=F,mirror=F),
+         yaxis=list(title=' ',mirror=F))
+
+orca(indifig, "fig/indifig-axis.pdf", width=625, height=355)
 
 ###
 # Dashboard prototyping

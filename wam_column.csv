@@ -237,3 +237,7 @@ testID;numeric
 MetaTimestamp;time
 SamplingFrequency;numeric
 TestID;int
+CtrRInstantJudgement;numeric
+CtrRInstantLowerThreshold;numeric
+CtrRInstantPerformance;numeric
+CtrRInstantUpperThreshold;numeric

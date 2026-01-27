@@ -62,7 +62,10 @@ for (folderpath in M$i) {
   D = D %>% rename(Participant = i1,
                    Session = i2)
   
-  
+  pfb_cols = c("CtrRInstantPerformance","CtrRInstantUpperThreshold","CtrRInstantLowerThreshold","CtrRInstantJudgement")
+
+  D = D %>% mutate(across(all_of(pfb_cols), ~ ifelse(!cur_column() %in% names(D), NULL, .), .names = "{.col}"))
+    
   col_formats = read.csv("wam_column.csv", sep=";")
   col_formats = col_formats %>% filter(name %in% colnames(D))
   
@@ -930,6 +933,18 @@ for (folderpath in M$i) {
       MoleIdStart = unique(MoleIdStart)
     ) %>% right_join(S)
   
+  S = D %>% ungroup() %>% filter(Event == "Sample", PlayPeriod == "Game", !is.na(RightControllerLaserPosWorldX),
+                                 !is.na(HitOrder)) %>% group_by(Participant,HitOrder) %>%
+    summarize(
+      fb_instant = list(data.frame('x'=CtrRInstantPerformance,
+                                   'cur'=CtrRInstantJudgement,
+                                   'worst'=CtrRInstantLowerThreshold,
+                                   'best'=CtrRInstantUpperThreshold,
+                                   't'=Timestamp)),
+      CtrRActionJudgement = unique(CtrRActionJudgement),
+      CtrRActionLowerThreshold = unique(CtrRActionLowerThreshold),
+      CtrRActionUpperThreshold = unique(CtrRActionUpperThreshold),
+    ) %>% right_join(S)
   
   S = S %>% ungroup() %>% mutate(MoleIdToHit = lead(MoleIdStart))
   

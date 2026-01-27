@@ -6,5 +6,4 @@ Sa;JudgementType.f;peak_speed_smooth_to_target_pct;% After Peak Speed; ; ;50;65;
 Sa;JudgementType.f;time_to_peak_speed_smooth_ms;Time to Peak Speed (s); ; ;420;690;metric;265;265;80;1;2;bar_error_metric_time_to_peak_speed_smooth_ms_annotated.svg
 Sa;JudgementType.f;travel_arm;Arm Travel (m); ; ;0.25;0.325;metric;265;265;125;1;0.02;bar_error_metric_travel_arm_annotated.svg
 Sa;JudgementType.f;throughput;Throughput (bits/s); ;;1.9;2.6;metric;265;265;125;1;0.02;bar_error_metric_throughput_annotated.svg
-Sa;JudgementType.f;fittsID;Fitts ID; ;;-0.1;4;metric;265;265;125;1;0.02;
 Sa;JudgementType.f;AlgoCorrespondFastSlow.f;Correspondence (1-7); ;;2;7;metric;265;265;125;1;0.02;bar_error_metric_AlgoCorrespondFastSlow.f_annotated.svg
